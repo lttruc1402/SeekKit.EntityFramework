@@ -2,8 +2,8 @@
 
   <PropertyGroup>
     <TargetFrameworks>netstandard2.1;net8.0;net9.0;net10.0</TargetFrameworks>
-    <Version>1.0.0</Version>
-    <PackageVersion>1.0.0</PackageVersion>
+    <Version>1.0.1</Version>
+    <PackageVersion>1.0.1</PackageVersion>
 
     <!-- XML docs for consumer IntelliSense; CS1591 = missing docs on some members -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -25,7 +25,9 @@
 
   <ItemGroup>
     <None Include="..\icon.png" Pack="true" PackagePath="\" Visible="false" />
-    <None Include="..\README.md" Pack="true" PackagePath="\" Visible="false" />
+    <!-- NuGet.org renders plain Markdown only (no HTML), so the package ships a
+         NuGet-specific README instead of the repo README. -->
+    <None Include="..\docs\README.nuget.md" Pack="true" PackagePath="README.md" Visible="false" />
   </ItemGroup>
 
 
