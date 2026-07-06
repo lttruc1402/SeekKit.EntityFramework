@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write   # needed to create GitHub Release
+      id-token: write   # needed for NuGet Trusted Publishing (OIDC)
 
     steps:
       - name: Checkout
@@ -47,13 +48,17 @@ jobs:
           -p:Version=${{ steps.version.outputs.VERSION }}
           --output ./nupkg
 
-      # ── Push to NuGet.org ─────────────────────────────────────────────────
+      # ── Push to NuGet.org via Trusted Publishing (OIDC, no stored API key) ──
+      - name: NuGet login (Trusted Publishing)
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: thanhtruc
+
       - name: Push to NuGet.org
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: >
           dotnet nuget push ./nupkg/*.nupkg
-          --api-key "$NUGET_API_KEY"
+          --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}"
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
