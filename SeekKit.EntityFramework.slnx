@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="SeekKit.EntityFramework/SeekKit.EntityFramework.csproj" />
+  <Project Path="SeekKit.EntityFramework.Tests/SeekKit.EntityFramework.Tests.csproj" />
+  <Project Path="examples/SeekKit.Example.Api/SeekKit.Example.Api.csproj" />
+</Solution>

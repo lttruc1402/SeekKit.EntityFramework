@@ -1,0 +1,68 @@
+name: 🐛 Bug report
+description: Something isn't working correctly
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: SeekKit.EntityFramework version
+      placeholder: "1.0.8"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database
+      options:
+        - SQL Server
+        - PostgreSQL
+        - MySQL / MariaDB
+        - Oracle
+        - SQLite
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: efcore
+    attributes:
+      label: EF Core version + provider package
+      placeholder: "EF Core 10.0.6 + Npgsql.EntityFrameworkCore.PostgreSQL 10.x"
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: SeekKit configuration
+      description: Your AddSeekKit options and the OrderBy configuration of the failing query.
+      render: csharp
+      placeholder: |
+        options.Strategy = DatabaseStrategy.ForPostgreSql(PostgreSqlStrategy.Tuple);
+        // ...
+        b => b.OrderByDescending(p => p.CreatedAt).OrderBy(p => p.Id)
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal code that reproduces the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: Expected vs actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: sql
+    attributes:
+      label: Generated SQL (optional but very helpful)
+      description: Enable `Microsoft.EntityFrameworkCore.Database.Command` logging and paste the query here.
+      render: sql

@@ -1,0 +1,52 @@
+<Project>
+
+  <!--
+    Directory.Build.props — applied to ALL projects in this repo before each .csproj.
+    Settings here can be overridden per-project in the individual .csproj files.
+  -->
+
+  <PropertyGroup Label="Compiler">
+    <!-- Always use the latest C# language version available in the current SDK. -->
+    <LangVersion>latest</LangVersion>
+
+    <!-- Enable nullable reference types across the board. -->
+    <Nullable>enable</Nullable>
+
+    <!-- Enable implicit global usings (Microsoft.NET.Sdk default namespaces). -->
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Deterministic builds — same inputs produce byte-for-byte identical outputs. -->
+    <Deterministic>true</Deterministic>
+
+    <!-- Emit full paths in diagnostics so IDEs can navigate to errors. -->
+    <GenerateFullPaths>true</GenerateFullPaths>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Warnings">
+    <!--
+      NU1903 — System.Text.Json 6.0.7 has a known high-severity vulnerability.
+      This version is used only for the netstandard2.1 TFM where we cannot use
+      the in-box .NET 8+ version. All other TFMs resolve the patched in-box copy.
+      The risk is acceptable: the NuGet package is a build/compile dependency only
+      for the source generator; at runtime the host app supplies its own version.
+    -->
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+
+    <!--
+      SYSLIB1037 — JSON source gen does not support init-only properties on net6.0.
+      We handle this gracefully: the source gen context is guarded with
+      #if NET6_0_OR_GREATER and init-only deserialization works at runtime.
+    -->
+    <NoWarn>$(NoWarn);SYSLIB1037</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Package metadata" Condition="'$(IsPackable)' != 'false'">
+    <Authors>Le Thanh Truc</Authors>
+    <Copyright>Copyright © 2026 Le Thanh Truc</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/lttruc1402/SeekKit.EntityFramework</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/lttruc1402/SeekKit.EntityFramework</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+</Project>

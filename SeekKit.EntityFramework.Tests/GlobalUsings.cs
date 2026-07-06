@@ -1,0 +1,12 @@
+global using System;
+global using System.Collections.Generic;
+global using System.Linq;
+global using System.Threading.Tasks;
+global using Xunit;
+global using Microsoft.Data.Sqlite;
+global using Microsoft.EntityFrameworkCore;
+global using Microsoft.Extensions.DependencyInjection;
+global using SeekKit.EntityFramework;
+global using SeekKit.EntityFramework.Core;
+global using SeekKit.EntityFramework.Models;
+global using SeekKit.EntityFramework.Tests.Infrastructure;
