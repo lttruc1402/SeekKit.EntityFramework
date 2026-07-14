@@ -12,7 +12,7 @@ internal sealed class PostgreSqlTupleSeekStrategy: ISeekFilterStrategy, IPageSiz
         _fallbackStrategy = fallbackStrategy;
     }
 
-    public IQueryable<T> ApplyFilter<T>(IQueryable<T> query, ParameterExpression parameter, List<ISortColumn<T>> orderFields, SeekData seekData)
+    public IQueryable<T> ApplyFilter<T>(IQueryable<T> query, ParameterExpression parameter, IReadOnlyList<ISortColumn<T>> orderFields, SeekData seekData)
     {
         if (orderFields.CanUseTuple())
         {
@@ -33,7 +33,7 @@ internal sealed class PostgreSqlTupleSeekStrategy: ISeekFilterStrategy, IPageSiz
     private IQueryable<T>? ApplyTupleComparison<T>(
            IQueryable<T> query,
            ParameterExpression parameter,
-           List<ISortColumn<T>> orderFields,
+           IReadOnlyList<ISortColumn<T>> orderFields,
            SeekData SeekData)
     {
 
@@ -87,7 +87,7 @@ internal sealed class PostgreSqlTupleSeekStrategy: ISeekFilterStrategy, IPageSiz
     private IQueryable<T> ApplyFallback<T>(
            IQueryable<T> query,
            ParameterExpression parameter,
-           List<ISortColumn<T>> orderFields,
+           IReadOnlyList<ISortColumn<T>> orderFields,
            SeekData seekData)
     {
         ISeekFilterStrategy fallbackStrategy = _fallbackStrategy switch

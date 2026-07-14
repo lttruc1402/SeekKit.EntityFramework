@@ -157,30 +157,4 @@ public static class IQueryableHelper
     {
         return serviceProvider.GetRequiredService<ISeekFactory>().CreateBuilder(query).WithRequest(request);
     }
-
-
-
-    internal static IQueryable<T> ApplyOrdering<T>(this IQueryable<T> query, List<ISortColumn<T>> sortColumns, SeekDirection direction)
-    {
-        bool shouldReverse = direction == SeekDirection.Previous;
-        IOrderedQueryable<T>? ordered = null;
-
-#if NET5_0_OR_GREATER
-        foreach (var field in CollectionsMarshal.AsSpan(sortColumns))
-#else
-        foreach (var field in sortColumns)
-#endif
-        {
-
-            var isDescending = shouldReverse
-                ? !field.IsDescending
-                : field.IsDescending;
-
-            ordered = ordered is null
-                ? field.ApplyOrderBy(query, isDescending)
-                : field.ApplyThenBy(ordered, isDescending);
-        }
-
-        return ordered!;
-    }
 }

@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-07-13
+
+See the [migration guide](docs/MIGRATION-2.0.md) for upgrading from 1.x.
+
+### Added
+
+- **SeekKit.MongoDB** — new package: cursor (keyset) pagination for MongoDB
+  over the official driver's LINQ provider. `AddSeekKitMongo()`,
+  `ISeekMongoService`, fluent `ISeekMongoBuilder<T>`, and built-in `ObjectId`
+  converters. Shares tokens and result contracts with SeekKit.EntityFramework.
+- **SeekKit.Core** — new package holding the provider-agnostic core:
+  `SeekResult<T>`, `SeekRequest`, `SeekData`, `SeekDirection`, `PageMetadata`,
+  token serializers (including HMAC signing), type converters, the OR-logic
+  keyset strategy, and the shared pagination algorithm (`SeekBuilderBase<T>`).
+- `AddSeekKitCore()` — providers can now be combined in one application:
+  `AddSeekKit` + `AddSeekKitMongo` share a single type-converter registry and
+  token serializer regardless of registration order.
+- SeekKit.MongoDB: paginate an `IAggregateFluent<T>` (e.g.
+  `collection.Aggregate().UnionWith(other)` or pipelines with `$lookup`/custom
+  stages) via `ISeekMongoService.SeekAsync(IAggregateFluent<T>, ...)`. SeekKit
+  appends a keyset `$match`, `$sort`, and `$limit`.
+- SeekKit.MongoDB: paginate an `IFindFluent<T, T>` (e.g.
+  `collection.Find(bsonFilter)` with a BSON `FilterDefinition` — text/geo/`$expr`
+  filters the LINQ provider can't express) via
+  `ISeekMongoService.SeekAsync(IFindFluent<T, T>, ...)`. SeekKit AND-s the keyset
+  predicate into the query filter and appends a sort and a limit.
+- `KeysetPredicateBuilder` (SeekKit.Core) exposes the OR-logic keyset predicate
+  for reuse across LINQ (`$where`) and aggregation (`$match`) paths.
+
+### Changed
+
+- **Breaking:** shared types moved out of `SeekKit.EntityFramework.*`
+  namespaces into the new SeekKit.Core package — `SeekResult<T>`,
+  `SeekRequest`, `SeekData`, `SeekDirection`, `PageMetadata` now live in
+  `SeekKit.Core.Models`; `ISeekSerializer`, `TypeConverter<T>`,
+  `ISeekFilterStrategy`, `SeekKitConfiguration` and friends in
+  `SeekKit.Core`; converters in `SeekKit.Core.Converters`. Update your
+  `using` directives — no API shapes changed.
+- A malformed or tampered pagination token now falls back to the first page
+  instead of throwing at query time.
+
+### Fixed
+
+- `SeekResult<T>.WithValue(...)` data was silently dropped from serialized
+  responses — the `[JsonExtensionData]` property was non-public, so
+  System.Text.Json ignored it. It is now public and serializes as documented.
+
 ## [1.0.1] - 2026-07-06
 
 ### Fixed
@@ -37,5 +84,6 @@ First open-source release. 🎉
 - Example project: .NET 10 minimal API + SQL Server via Docker Compose +
   bulk seed script for seek-vs-offset benchmarking
 
+[2.0.0]: https://github.com/lttruc1402/SeekKit.EntityFramework/releases/tag/v2.0.0
 [1.0.1]: https://github.com/lttruc1402/SeekKit.EntityFramework/releases/tag/v1.0.1
 [1.0.0]: https://github.com/lttruc1402/SeekKit.EntityFramework/releases/tag/v1.0.0

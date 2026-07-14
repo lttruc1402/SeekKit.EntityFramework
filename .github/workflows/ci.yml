@@ -44,17 +44,25 @@ jobs:
           --no-restore
           --configuration Release
 
-      - name: Test
+      - name: Unit tests
         run: >
           dotnet test SeekKit.EntityFramework.Tests/SeekKit.EntityFramework.Tests.csproj
-          --configuration Release
-          --no-build
-          --logger "console;verbosity=normal"
-          --collect:"XPlat Code Coverage"
+          --configuration Release --no-build --logger "console;verbosity=normal"
+          --collect:"XPlat Code Coverage" &&
+          dotnet test SeekKit.MongoDB.Tests/SeekKit.MongoDB.Tests.csproj
+          --configuration Release --no-build --logger "console;verbosity=normal"
+
+      # Integration tests spin up a real MongoDB via Testcontainers, which needs
+      # a Linux Docker daemon — available on the ubuntu runner only.
+      - name: Integration tests (real MongoDB)
+        if: matrix.os == 'ubuntu-latest'
+        run: >
+          dotnet test SeekKit.MongoDB.IntegrationTests/SeekKit.MongoDB.IntegrationTests.csproj
+          --configuration Release --no-build --logger "console;verbosity=normal"
 
       - name: Pack (validate packaging)
         run: >
-          dotnet pack SeekKit.EntityFramework/SeekKit.EntityFramework.csproj
+          dotnet pack SeekKit.EntityFramework.slnx
           --no-build
           --configuration Release
           --output ./nupkg

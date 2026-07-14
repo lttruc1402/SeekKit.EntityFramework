@@ -29,20 +29,20 @@ jobs:
 
       # ── Restore ───────────────────────────────────────────────────────────
       - name: Restore
-        run: dotnet restore SeekKit.EntityFramework/SeekKit.EntityFramework.csproj
+        run: dotnet restore SeekKit.EntityFramework.slnx
 
-      # ── Build all TFMs in Release ─────────────────────────────────────────
+      # ── Build all packages (Core, EntityFramework, MongoDB) ──────────────
       - name: Build
         run: >
-          dotnet build SeekKit.EntityFramework/SeekKit.EntityFramework.csproj
+          dotnet build SeekKit.EntityFramework.slnx
           --no-restore
           --configuration Release
           -p:Version=${{ steps.version.outputs.VERSION }}
 
-      # ── Pack NuGet package ────────────────────────────────────────────────
+      # ── Pack all packable projects ────────────────────────────────────────
       - name: Pack
         run: >
-          dotnet pack SeekKit.EntityFramework/SeekKit.EntityFramework.csproj
+          dotnet pack SeekKit.EntityFramework.slnx
           --no-build
           --configuration Release
           -p:Version=${{ steps.version.outputs.VERSION }}

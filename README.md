@@ -17,6 +17,20 @@
 
 ---
 
+## Packages
+
+| Package | Description |
+|---------|-------------|
+| [`SeekKit.EntityFramework`](https://www.nuget.org/packages/SeekKit.EntityFramework) | Cursor pagination for EF Core — SQL Server, PostgreSQL, MySQL, Oracle, SQLite |
+| [`SeekKit.MongoDB`](https://www.nuget.org/packages/SeekKit.MongoDB) | Cursor pagination for MongoDB via the official driver's LINQ provider |
+| [`SeekKit.Core`](https://www.nuget.org/packages/SeekKit.Core) | Shared contracts, token serialization, converters (installed automatically) |
+
+All providers share the same `SeekResult<T>` / `SeekRequest` contracts and token
+format, so SQL and MongoDB endpoints expose one identical pagination API.
+
+> Upgrading from 1.x? See the **[2.0 migration guide](docs/MIGRATION-2.0.md)** —
+> it's a 5-minute find-and-replace of `using` directives.
+
 ## What is SeekKit?
 
 SeekKit replaces slow `Skip/Take` (offset) pagination with **keyset pagination** (also called *cursor* or *seek* pagination). Instead of asking the database to count and discard rows, it remembers *where the last page ended* and continues from that exact position:
@@ -74,8 +88,9 @@ You also need the EF Core provider for your database (e.g. `Microsoft.EntityFram
 
 ```csharp
 // Program.cs
+using SeekKit.Core.Models;            // SeekRequest, SeekResult<T>
 using SeekKit.EntityFramework;
-using SeekKit.EntityFramework.Core;
+using SeekKit.EntityFramework.Core;   // DatabaseStrategy
 
 builder.Services.AddSeekKit(options =>
 {
@@ -386,17 +401,106 @@ Registers `ISeekService` and friends as singletons.
 | Oracle | `Oracle.EntityFrameworkCore` |
 | SQLite | `Microsoft.EntityFrameworkCore.Sqlite` |
 
-## Example project
+## Entry points
 
-A runnable end-to-end demo — .NET 10 minimal API, SQL Server 2022 via Docker Compose, and a
-bulk seed script for benchmarking seek vs offset on billions of rows — lives in
-[`examples/SeekKit.Example.Api`](examples/SeekKit.Example.Api).
+Every `SeekAsync` overload takes the same `(source, request, configure)` shape,
+returns the same `SeekResult<T>`, and produces the same token format — pick the
+one that matches how you built your query.
+
+### Entity Framework Core — `ISeekService`
+
+| Source | Overload | Use when |
+|--------|----------|----------|
+| `IQueryable<T>` | `SeekAsync(query, request, configure)` | Any EF Core `DbSet`/LINQ query |
+| `IQueryable<T>` | `SeekAsync(query, request, configure, configureOptions)` | + per-request option overrides |
+| `IQueryable<T>` | `CreateBuilder(query)` → fluent | You prefer the fluent builder |
+
+```csharp
+// one-call
+var page = await seek.SeekAsync(
+    db.Products.Where(p => p.IsActive), request,
+    b => b.OrderByDescending(p => p.CreatedAt).OrderBy(p => p.Id));
+
+// fluent builder
+var page = await seek.CreateBuilder(db.Products)
+    .WithRequest(request)
+    .OrderByDescending(p => p.CreatedAt)
+    .OrderBy(p => p.Id)
+    .ToSeekResultAsync();
+```
+
+There are also `IQueryable<T>` extension methods (`ToSeekResultAsync(...)`) if you
+have an `ISeekService`, `ISeekFactory`, or `IServiceProvider` in hand.
+
+### MongoDB — `ISeekMongoService`
+
+[`SeekKit.MongoDB`](https://www.nuget.org/packages/SeekKit.MongoDB) covers every
+query model of the official driver. `ObjectId` works as a sort/tie-breaker column
+out of the box.
+
+| Source | Overload | Use when |
+|--------|----------|----------|
+| `IMongoCollection<T>` | `SeekAsync(collection, ...)` | Paginate a whole collection |
+| `IQueryable<T>` | `SeekAsync(queryable, ...)` | LINQ query — `AsQueryable().Where(...)`, `.Union(...)` |
+| `IAggregateFluent<T>` | `SeekAsync(aggregate, ...)` | Aggregation pipeline — `$unionWith`, `$lookup`, custom stages |
+| `IFindFluent<T, T>` | `SeekAsync(find, ...)` | BSON `FilterDefinition` — text/geo/`$expr` filters LINQ can't express |
+
+```csharp
+builder.Services.AddSeekKitMongo(options => options.DefaultPageSize = 20);
+
+// 1. Whole collection
+await seek.SeekAsync(products, request,
+    b => b.OrderByDescending(p => p.CreatedAt).OrderBy(p => p.Id));
+
+// 2. LINQ queryable (filters, .Union across collections)
+await seek.SeekAsync(
+    products.AsQueryable().Where(p => p.IsActive), request,
+    b => b.OrderByDescending(p => p.CreatedAt).OrderBy(p => p.Id));
+
+// 3. Aggregation pipeline — SeekKit appends a keyset $match, $sort, $limit
+IAggregateFluent<Product> pipeline = live.Aggregate().UnionWith(archive);
+await seek.SeekAsync(pipeline, request,
+    b => b.OrderByDescending(p => p.CreatedAt).OrderBy(p => p.Id));
+
+// 4. Find with a BSON filter — SeekKit AND-s the keyset predicate into it
+IFindFluent<Product, Product> find = products.Find(Builders<Product>.Filter.Text("wireless"));
+await seek.SeekAsync(find, request,
+    b => b.OrderByDescending(p => p.Score).OrderBy(p => p.Id));
+```
+
+The keyset predicate becomes an indexable `$or` filter — create a compound index
+matching your sort (e.g. `{ CreatedAt: -1, _id: 1 }`). For the aggregation and
+find overloads, the sort columns must be real fields on the output and the last
+one globally unique.
+
+### Both providers in one app
+
+Register both — they share one converter registry and one token serializer,
+in any order:
+
+```csharp
+builder.Services.AddSeekKit(o => o.Strategy = DatabaseStrategy.ForSqlServer());
+builder.Services.AddSeekKitMongo(o => o.DefaultPageSize = 20);
+// inject ISeekService for EF queries, ISeekMongoService for Mongo collections
+```
+
+Custom converters and `UseHmacSigning` registered through either provider's
+`configure` apply to both, so tokens stay consistent app-wide.
+
+## Example projects
+
+Runnable end-to-end demos — .NET 10 minimal APIs with Docker Compose and bulk
+seed scripts for benchmarking seek vs offset yourself:
+
+| Example | Database | |
+|---------|----------|---|
+| [`examples/SeekKit.Example.Api`](examples/SeekKit.Example.Api) | SQL Server 2022 | seek vs `OFFSET/FETCH` |
+| [`examples/SeekKit.Example.MongoApi`](examples/SeekKit.Example.MongoApi) | MongoDB 7 | seek vs `skip/limit` |
 
 ```bash
-cd examples/SeekKit.Example.Api
-docker compose up -d sqlserver        # start SQL Server
-# seed data (see examples README for row-count options), then:
-docker compose up -d --build api      # http://localhost:8080/products
+cd examples/SeekKit.Example.Api       # or SeekKit.Example.MongoApi
+docker compose up -d                  # database + API
+# then seed data — see each example's README
 ```
 
 ## Contributing

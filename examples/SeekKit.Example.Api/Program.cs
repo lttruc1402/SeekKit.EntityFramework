@@ -1,8 +1,9 @@
 using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
+using SeekKit.Core;
+using SeekKit.Core.Models;
 using SeekKit.EntityFramework;
 using SeekKit.EntityFramework.Core;
-using SeekKit.EntityFramework.Models;
 using SeekKit.Example.Api.Data;
 
 var builder = WebApplication.CreateBuilder(args);

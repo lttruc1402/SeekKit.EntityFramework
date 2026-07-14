@@ -12,7 +12,7 @@ internal sealed class PostgreSqlAutoStrategy: ISeekFilterStrategy, IPageSizeAwar
         _fallbackStrategy = fallbackStrategy;
     }
 
-    public IQueryable<T> ApplyFilter<T>(IQueryable<T> query, ParameterExpression parameter, List<ISortColumn<T>> orderFields, SeekData seekData)
+    public IQueryable<T> ApplyFilter<T>(IQueryable<T> query, ParameterExpression parameter, IReadOnlyList<ISortColumn<T>> orderFields, SeekData seekData)
     {
         if (orderFields.CanUseTuple())
         {

@@ -1,4 +1,12 @@
+using System.Text.Json;
+
 namespace SeekKit.EntityFramework.Tests.Unit;
+
+file static class Json
+{
+    // Mirror ASP.NET Core minimal-API serialization (camelCase standard props).
+    public static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
+}
 
 /// <summary>
 /// Unit tests for <see cref="SeekResult{T}"/> — Map, WithValue, and property invariants.
@@ -100,7 +108,7 @@ public sealed class SeekResultTests
     }
 
     [Fact]
-    public void Map_PreservesExtensionData()
+    public void Map_PreservesExtensionData_AndItSerializes()
     {
         var result = Make([1])
             .WithValue("total", 99)
@@ -108,9 +116,11 @@ public sealed class SeekResultTests
 
         var mapped = result.Map(x => x.ToString());
 
-        // Extension data is propagated via the Map implementation
-        Assert.NotNull(mapped);
         Assert.Equal("1", mapped.Items[0]);
+
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(mapped, Json.Web));
+        Assert.Equal(99, doc.RootElement.GetProperty("total").GetInt32());
+        Assert.Equal("active", doc.RootElement.GetProperty("filter").GetString());
     }
 
     // ── WithValue ─────────────────────────────────────────────────────────────
@@ -133,6 +143,27 @@ public sealed class SeekResultTests
             .WithValue("c", 3);
 
         Assert.NotNull(result); // chain didn't throw
+    }
+
+    [Fact]
+    public void WithValue_SerializesAsTopLevelJsonProperties()
+    {
+        // Regression: ExtensionData must be public for [JsonExtensionData] to be
+        // honored by System.Text.Json — otherwise WithValue data is silently
+        // dropped from the response.
+        var result = Make([1, 2], nextToken: "next")
+            .WithValue("elapsedMs", 3.5)
+            .WithValue("totalActive", 42);
+
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(result, Json.Web));
+        var root = doc.RootElement;
+
+        // Extra values appear as siblings of the standard properties
+        Assert.Equal(3.5, root.GetProperty("elapsedMs").GetDouble());
+        Assert.Equal(42, root.GetProperty("totalActive").GetInt32());
+        // Standard properties still present
+        Assert.Equal("next", root.GetProperty("nextToken").GetString());
+        Assert.Equal(2, root.GetProperty("count").GetInt32());
     }
 
     // ── Property invariants ───────────────────────────────────────────────────

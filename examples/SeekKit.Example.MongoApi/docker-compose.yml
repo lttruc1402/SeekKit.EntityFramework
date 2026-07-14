@@ -1,0 +1,31 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: seekkit-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+      - ./scripts:/scripts:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  api:
+    build:
+      context: ../..
+      dockerfile: examples/SeekKit.Example.MongoApi/Dockerfile
+    container_name: seekkit-mongo-api
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Mongo: "mongodb://mongo:27017"
+    ports:
+      - "8081:8080"
+
+volumes:
+  mongo-data:

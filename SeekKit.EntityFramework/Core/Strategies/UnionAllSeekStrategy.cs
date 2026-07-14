@@ -13,7 +13,7 @@ internal sealed class UnionAllSeekStrategy: ISeekFilterStrategy, IPageSizeAware
         _fallbackStrategy = fallbackStrategy;
     }
 
-    public IQueryable<T> ApplyFilter<T>(IQueryable<T> query, ParameterExpression parameter, List<ISortColumn<T>> orderFields, SeekData seekData)
+    public IQueryable<T> ApplyFilter<T>(IQueryable<T> query, ParameterExpression parameter, IReadOnlyList<ISortColumn<T>> orderFields, SeekData seekData)
     {
         try
         {
@@ -56,7 +56,7 @@ internal sealed class UnionAllSeekStrategy: ISeekFilterStrategy, IPageSizeAware
     private List<IQueryable<T>> BuildBranchQueries<T>(
             IQueryable<T> baseQuery,
             ParameterExpression parameter,
-            List<ISortColumn<T>> orderFields,
+            IReadOnlyList<ISortColumn<T>> orderFields,
             SeekData SeekData)
     {
         var branches = new List<IQueryable<T>>(orderFields.Count);
@@ -104,7 +104,7 @@ internal sealed class UnionAllSeekStrategy: ISeekFilterStrategy, IPageSizeAware
     private IQueryable<T> ApplyFallback<T>(
             IQueryable<T> query,
             ParameterExpression parameter,
-            List<ISortColumn<T>> orderFields,
+            IReadOnlyList<ISortColumn<T>> orderFields,
              SeekData seekData)
     {
         if (_fallbackStrategy == FallbackStrategy.OrLogic)

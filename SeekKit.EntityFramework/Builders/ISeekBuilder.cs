@@ -2,7 +2,7 @@ namespace SeekKit.EntityFramework.Builders;
 
 /// <summary>
 /// Fluent builder for constructing and executing a cursor-paginated query.
-/// Obtain an instance via <see cref="ISeekService.CreateBuilder{T}"/>.
+/// Obtain an instance via <see cref="ISeekService.CreateBuilder{T}(IQueryable{T})"/>.
 /// </summary>
 /// <typeparam name="T">The entity type being queried.</typeparam>
 public interface ISeekBuilder<T>

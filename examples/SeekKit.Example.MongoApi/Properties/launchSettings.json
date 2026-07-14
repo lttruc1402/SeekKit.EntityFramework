@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "SeekKit.Example.MongoApi": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:57700;http://localhost:57701"
+    }
+  }
+}

@@ -1,5 +1,10 @@
 <Solution>
+  <Project Path="SeekKit.Core/SeekKit.Core.csproj" />
+  <Project Path="SeekKit.MongoDB/SeekKit.MongoDB.csproj" />
   <Project Path="SeekKit.EntityFramework/SeekKit.EntityFramework.csproj" />
   <Project Path="SeekKit.EntityFramework.Tests/SeekKit.EntityFramework.Tests.csproj" />
+  <Project Path="SeekKit.MongoDB.Tests/SeekKit.MongoDB.Tests.csproj" />
+  <Project Path="SeekKit.MongoDB.IntegrationTests/SeekKit.MongoDB.IntegrationTests.csproj" />
   <Project Path="examples/SeekKit.Example.Api/SeekKit.Example.Api.csproj" />
+  <Project Path="examples/SeekKit.Example.MongoApi/SeekKit.Example.MongoApi.csproj" />
 </Solution>

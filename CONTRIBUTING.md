@@ -13,7 +13,18 @@ cd SeekKit.EntityFramework
 dotnet test SeekKit.EntityFramework.slnx
 ```
 
-Tests use in-memory SQLite — no database setup required.
+### Test layers
+
+| Project | What it needs |
+|---------|---------------|
+| `SeekKit.EntityFramework.Tests` | Nothing — in-memory SQLite |
+| `SeekKit.MongoDB.Tests` | Nothing — in-memory LINQ (fast unit tests) |
+| `SeekKit.MongoDB.IntegrationTests` | **Docker** — spins up a real MongoDB via [Testcontainers](https://testcontainers.com/) to exercise the actual driver query translation for every entry point |
+
+The MongoDB integration tests need a running Docker daemon (they pull `mongo:7`).
+Without Docker they'll error on startup; run just the unit tests with
+`dotnet test SeekKit.EntityFramework.Tests/... && dotnet test SeekKit.MongoDB.Tests/...`.
+CI runs the integration tests on the Linux runner only.
 
 ## Reporting bugs
 
