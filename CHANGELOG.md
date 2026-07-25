@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-07-25
+
+`SeekKit.EntityFramework` and `SeekKit.MongoDB` release together at 2.2.0.
+`SeekKit.Core` is unaffected and stays at 2.1.0.
+
+### Added
+
+- **SeekKit.EntityFramework:** `ISeekService.SeekAsync<T, TResult>(query, request,
+  transformer, configure[, configureOption], ct)` — one-call projected pagination
+  using `ISeekBuilder<T>.Select<TResult>` without building the fluent chain
+  yourself. Mirrors the existing non-projected `SeekAsync<T>` overloads exactly,
+  including the per-request `SeekKitOptions` override variant.
+- **SeekKit.MongoDB:** matching `ISeekMongoService.SeekAsync<T, TResult>(...)`
+  overloads for all four sources — `IMongoCollection<T>`, `IQueryable<T>`,
+  `IAggregateFluent<T>`, `IFindFluent<T, T>` — each taking the transformer shape
+  that source's `Select<TResult>` expects.
+
 ## [2.1.0] - 2026-07-25
 
 All three packages (SeekKit.Core, SeekKit.EntityFramework, SeekKit.MongoDB) release

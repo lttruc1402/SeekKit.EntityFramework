@@ -97,6 +97,71 @@ public interface ISeekMongoService
         SeekRequest request,
         Action<ISeekMongoBuilder<T>> configure,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Paginates the whole collection in a single call, applying a projection that
+    /// defers the join/transform until after ordering, keyset filtering, and the
+    /// look-ahead limit — see <see cref="ISeekMongoQueryableBuilder{T}.Select{TResult}"/>.
+    /// </summary>
+    /// <param name="collection">The collection to paginate.</param>
+    /// <param name="request">The pagination request from the client.</param>
+    /// <param name="transformer">Projects the ordered, filtered, limited query to <typeparamref name="TResult"/>.</param>
+    /// <param name="configure">A delegate to configure ordering (and optionally strategy) on the builder.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    ValueTask<SeekResult<TResult>> SeekAsync<T, TResult>(
+        IMongoCollection<T> collection,
+        SeekRequest request,
+        Func<IQueryable<T>, IQueryable<TResult>> transformer,
+        Action<ISeekMongoBuilder<T>> configure,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Paginates a pre-filtered queryable in a single call, applying a projection —
+    /// see <see cref="ISeekMongoQueryableBuilder{T}.Select{TResult}"/>.
+    /// </summary>
+    /// <param name="query">The base query, e.g. <c>collection.AsQueryable().Where(x => x.IsActive)</c>.</param>
+    /// <param name="request">The pagination request from the client.</param>
+    /// <param name="transformer">Projects the ordered, filtered, limited query to <typeparamref name="TResult"/>.</param>
+    /// <param name="configure">A delegate to configure ordering (and optionally strategy) on the builder.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    ValueTask<SeekResult<TResult>> SeekAsync<T, TResult>(
+        IQueryable<T> query,
+        SeekRequest request,
+        Func<IQueryable<T>, IQueryable<TResult>> transformer,
+        Action<ISeekMongoBuilder<T>> configure,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Paginates an aggregation pipeline in a single call, applying a projection —
+    /// see <see cref="ISeekMongoAggregateBuilder{T}.Select{TResult}"/>.
+    /// </summary>
+    /// <param name="aggregate">The aggregation pipeline, e.g. <c>collection.Aggregate().UnionWith(other)</c>.</param>
+    /// <param name="request">The pagination request from the client.</param>
+    /// <param name="transformer">Projects the ordered, filtered, limited pipeline to <typeparamref name="TResult"/>.</param>
+    /// <param name="configure">A delegate to configure ordering on the builder.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    ValueTask<SeekResult<TResult>> SeekAsync<T, TResult>(
+        IAggregateFluent<T> aggregate,
+        SeekRequest request,
+        Func<IAggregateFluent<T>, IAggregateFluent<TResult>> transformer,
+        Action<ISeekMongoBuilder<T>> configure,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Paginates a find query in a single call, applying a projection — see
+    /// <see cref="ISeekMongoFindBuilder{T}.Select{TResult}"/>.
+    /// </summary>
+    /// <param name="find">The find query, e.g. <c>collection.Find(bsonFilter)</c>.</param>
+    /// <param name="request">The pagination request from the client.</param>
+    /// <param name="transformer">Projects the ordered, filtered, limited find query to <typeparamref name="TResult"/>.</param>
+    /// <param name="configure">A delegate to configure ordering on the builder.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    ValueTask<SeekResult<TResult>> SeekAsync<T, TResult>(
+        IFindFluent<T, T> find,
+        SeekRequest request,
+        Func<IFindFluent<T, T>, IFindFluent<T, TResult>> transformer,
+        Action<ISeekMongoBuilder<T>> configure,
+        CancellationToken cancellationToken = default);
 }
 
 
@@ -190,5 +255,67 @@ internal sealed class SeekMongoService : ISeekMongoService
         var builder = CreateBuilder(find).WithRequest(request);
         configure(builder);
         return builder.ToSeekResultAsync(cancellationToken);
+    }
+
+    public ValueTask<SeekResult<TResult>> SeekAsync<T, TResult>(
+        IMongoCollection<T> collection,
+        SeekRequest request,
+        Func<IQueryable<T>, IQueryable<TResult>> transformer,
+        Action<ISeekMongoBuilder<T>> configure,
+        CancellationToken cancellationToken = default)
+    {
+        if (collection is null) throw new ArgumentNullException(nameof(collection));
+        return SeekAsync(collection.AsQueryable(), request, transformer, configure, cancellationToken);
+    }
+
+    public ValueTask<SeekResult<TResult>> SeekAsync<T, TResult>(
+        IQueryable<T> query,
+        SeekRequest request,
+        Func<IQueryable<T>, IQueryable<TResult>> transformer,
+        Action<ISeekMongoBuilder<T>> configure,
+        CancellationToken cancellationToken = default)
+    {
+        if (query is null) throw new ArgumentNullException(nameof(query));
+        if (request is null) throw new ArgumentNullException(nameof(request));
+        if (transformer is null) throw new ArgumentNullException(nameof(transformer));
+        if (configure is null) throw new ArgumentNullException(nameof(configure));
+
+        var builder = CreateBuilder(query).WithRequest(request);
+        configure(builder);
+        return builder.Select(transformer).ToSeekResultAsync(cancellationToken);
+    }
+
+    public ValueTask<SeekResult<TResult>> SeekAsync<T, TResult>(
+        IAggregateFluent<T> aggregate,
+        SeekRequest request,
+        Func<IAggregateFluent<T>, IAggregateFluent<TResult>> transformer,
+        Action<ISeekMongoBuilder<T>> configure,
+        CancellationToken cancellationToken = default)
+    {
+        if (aggregate is null) throw new ArgumentNullException(nameof(aggregate));
+        if (request is null) throw new ArgumentNullException(nameof(request));
+        if (transformer is null) throw new ArgumentNullException(nameof(transformer));
+        if (configure is null) throw new ArgumentNullException(nameof(configure));
+
+        var builder = CreateBuilder(aggregate).WithRequest(request);
+        configure(builder);
+        return builder.Select(transformer).ToSeekResultAsync(cancellationToken);
+    }
+
+    public ValueTask<SeekResult<TResult>> SeekAsync<T, TResult>(
+        IFindFluent<T, T> find,
+        SeekRequest request,
+        Func<IFindFluent<T, T>, IFindFluent<T, TResult>> transformer,
+        Action<ISeekMongoBuilder<T>> configure,
+        CancellationToken cancellationToken = default)
+    {
+        if (find is null) throw new ArgumentNullException(nameof(find));
+        if (request is null) throw new ArgumentNullException(nameof(request));
+        if (transformer is null) throw new ArgumentNullException(nameof(transformer));
+        if (configure is null) throw new ArgumentNullException(nameof(configure));
+
+        var builder = CreateBuilder(find).WithRequest(request);
+        configure(builder);
+        return builder.Select(transformer).ToSeekResultAsync(cancellationToken);
     }
 }

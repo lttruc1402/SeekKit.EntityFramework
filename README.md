@@ -468,6 +468,7 @@ one that matches how you built your query.
 |--------|----------|----------|
 | `IQueryable<T>` | `SeekAsync(query, request, configure)` | Any EF Core `DbSet`/LINQ query |
 | `IQueryable<T>` | `SeekAsync(query, request, configure, configureOptions)` | + per-request option overrides |
+| `IQueryable<T>` | `SeekAsync<T, TResult>(query, request, transformer, configure[, configureOptions])` | + a push-down `Select` projection |
 | `IQueryable<T>` | `CreateBuilder(query)` → fluent | You prefer the fluent builder |
 
 ```csharp
@@ -475,6 +476,12 @@ one that matches how you built your query.
 var page = await seek.SeekAsync(
     db.Products.Where(p => p.IsActive), request,
     b => b.OrderByDescending(p => p.CreatedAt).OrderBy(p => p.Id));
+
+// one-call, projected — same idea as CreateBuilder(...).Select(...), no fluent chain
+var projected = await seek.SeekAsync(
+    db.Products.Where(p => p.IsActive), request,
+    transformer: q => q.Select(p => new ProductDto { Id = p.Id, CreatedAt = p.CreatedAt }),
+    configure:   b => b.OrderByDescending(p => p.CreatedAt).OrderBy(p => p.Id));
 
 // fluent builder
 var page = await seek.CreateBuilder(db.Products)
@@ -536,6 +543,13 @@ await seek.SeekAsync(pipeline, request,
 IFindFluent<Product, Product> find = products.Find(Builders<Product>.Filter.Text("wireless"));
 await seek.SeekAsync(find, request,
     b => b.OrderByDescending(p => p.Score).OrderBy(p => p.Id));
+
+// Any of the four also has a SeekAsync<T, TResult> overload taking a transformer —
+// one-call projected pagination, same idea as CreateBuilder(...).Select(...):
+await seek.SeekAsync(
+    products.AsQueryable().Where(p => p.IsActive), request,
+    transformer: q => q.Select(p => new ProductDto { Id = p.Id, CreatedAt = p.CreatedAt }),
+    configure:   b => b.OrderByDescending(p => p.CreatedAt).OrderBy(p => p.Id));
 ```
 
 The keyset predicate becomes an indexable `$or` filter — create a compound index

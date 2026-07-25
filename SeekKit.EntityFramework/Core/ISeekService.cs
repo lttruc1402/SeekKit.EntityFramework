@@ -51,6 +51,45 @@ public interface ISeekService
         Action<ISeekBuilder<T>> configure,
         Action<SeekKitOptions> configureOption,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Paginates the query in a single call, applying a projection that defers
+    /// the join/transform until after ordering, keyset filtering, and the
+    /// look-ahead limit — see <see cref="ISeekBuilder{T}.Select{TResult}"/>.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <typeparam name="TResult">The projected result type.</typeparam>
+    /// <param name="query">The base EF Core query.</param>
+    /// <param name="request">The pagination request from the client.</param>
+    /// <param name="transformer">Projects the ordered, filtered, limited query to <typeparamref name="TResult"/>.</param>
+    /// <param name="configure">A delegate to configure ordering and strategy on the builder.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    ValueTask<SeekResult<TResult>> SeekAsync<T, TResult>(
+        IQueryable<T> query,
+        SeekRequest request,
+        Func<IQueryable<T>, IQueryable<TResult>> transformer,
+        Action<ISeekBuilder<T>> configure,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Paginates the query in a single call with per-request option overrides,
+    /// applying a projection — see <see cref="ISeekBuilder{T}.Select{TResult}"/>.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <typeparam name="TResult">The projected result type.</typeparam>
+    /// <param name="query">The base EF Core query.</param>
+    /// <param name="request">The pagination request from the client.</param>
+    /// <param name="transformer">Projects the ordered, filtered, limited query to <typeparamref name="TResult"/>.</param>
+    /// <param name="configure">A delegate to configure ordering and strategy on the builder.</param>
+    /// <param name="configureOption">A delegate to override global <see cref="SeekKitOptions"/> for this request only.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    ValueTask<SeekResult<TResult>> SeekAsync<T, TResult>(
+        IQueryable<T> query,
+        SeekRequest request,
+        Func<IQueryable<T>, IQueryable<TResult>> transformer,
+        Action<ISeekBuilder<T>> configure,
+        Action<SeekKitOptions> configureOption,
+        CancellationToken cancellationToken = default);
 }
 
 
@@ -96,5 +135,40 @@ internal sealed class SeekService : ISeekService
         var buidler = _seekFactory.CreateBuilder(query, configureOption);
         configure(buidler);
         return buidler.WithRequest(request).ToSeekResultAsync(cancellationToken);
+    }
+
+    public ValueTask<SeekResult<TResult>> SeekAsync<T, TResult>(
+        IQueryable<T> query,
+        SeekRequest request,
+        Func<IQueryable<T>, IQueryable<TResult>> transformer,
+        Action<ISeekBuilder<T>> configure,
+        CancellationToken cancellationToken = default)
+    {
+        if (query == null) throw new ArgumentNullException(nameof(query));
+        if (request == null) throw new ArgumentNullException(nameof(request));
+        if (transformer == null) throw new ArgumentNullException(nameof(transformer));
+        if (configure == null) throw new ArgumentNullException(nameof(configure));
+
+        var builder = _seekFactory.CreateBuilder(query);
+        configure(builder);
+        return builder.WithRequest(request).Select(transformer).ToSeekResultAsync(cancellationToken);
+    }
+
+    public ValueTask<SeekResult<TResult>> SeekAsync<T, TResult>(
+        IQueryable<T> query,
+        SeekRequest request,
+        Func<IQueryable<T>, IQueryable<TResult>> transformer,
+        Action<ISeekBuilder<T>> configure,
+        Action<SeekKitOptions> configureOption,
+        CancellationToken cancellationToken = default)
+    {
+        if (query == null) throw new ArgumentNullException(nameof(query));
+        if (request == null) throw new ArgumentNullException(nameof(request));
+        if (transformer == null) throw new ArgumentNullException(nameof(transformer));
+        if (configure == null) throw new ArgumentNullException(nameof(configure));
+
+        var builder = _seekFactory.CreateBuilder(query, configureOption);
+        configure(builder);
+        return builder.WithRequest(request).Select(transformer).ToSeekResultAsync(cancellationToken);
     }
 }
