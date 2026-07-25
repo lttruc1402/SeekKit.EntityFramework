@@ -1,8 +1,10 @@
 using System.Diagnostics;
+using MongoDB.Bson;
 using MongoDB.Driver;
 using SeekKit.Core.Models;
 using SeekKit.Example.MongoApi.Data;
 using SeekKit.MongoDB;
+using SeekKit.MongoDB.Builders;
 using SeekKit.MongoDB.Core;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,6 +14,7 @@ var mongoConnection = builder.Configuration.GetConnectionString("Mongo") ?? "mon
 builder.Services.AddSingleton<IMongoClient>(new MongoClient(mongoConnection));
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoClient>().GetDatabase("seekkit_demo"));
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoDatabase>().GetCollection<Product>("products"));
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoDatabase>().GetCollection<Category>("categories"));
 
 builder.Services.AddSeekKitMongo(options =>
 {
@@ -55,6 +58,51 @@ app.MapGet("/products", async (
         b => b.OrderByDescending(p => p.CreatedAt)
               .OrderBy(p => p.Id),          // unique tie-breaker (_id) — always last
         ct);
+
+    return Results.Ok(result.WithValue("elapsedMs", sw.Elapsed.TotalMilliseconds));
+});
+
+// ── Cursor pagination with a push-down projection (Select) ──────────────────
+// Demonstrates ISeekMongoAggregateBuilder<T>.Select<TResult>: the $lookup into
+// "categories" only runs against the already keyset-filtered/sorted/$limit-ed
+// page, not the whole collection. The $lookup/$project stages are appended as
+// raw BsonDocument pipeline stages — the LINQ3 provider can't translate the
+// BsonDocument shape a typed Lookup<> would produce, so this mirrors the same
+// technique SeekKit's own integration tests use for $lookup scenarios.
+app.MapGet("/products/projected", async (
+    ISeekMongoService seek,
+    IMongoCollection<Product> products,
+    string? token,
+    int? pageSize,
+    CancellationToken ct) =>
+{
+    var sw = Stopwatch.StartNew();
+
+    var lookupStage = new BsonDocument("$lookup", new BsonDocument
+    {
+        { "from", "categories" },
+        { "localField", "CategoryId" },
+        { "foreignField", "_id" },
+        { "as", "CategoryDocs" }
+    });
+
+    var projectStage = new BsonDocument("$project", new BsonDocument
+    {
+        { "_id", 1 },
+        { "CreatedAt", 1 },
+        { "Name", 1 },
+        { "CategoryName", new BsonDocument("$arrayElemAt", new BsonArray { "$CategoryDocs.Name", 0 }) }
+    });
+
+    SeekResult<ProductSummary> result = await seek
+        .CreateBuilder(products.Aggregate())
+        .OrderByDescending(p => p.CreatedAt)
+        .OrderBy(p => p.Id)               // unique tie-breaker — always last
+        .WithRequest(new SeekRequest { Token = token, PageSize = pageSize })
+        .Select(pipeline => pipeline
+            .AppendStage<BsonDocument>(lookupStage)
+            .AppendStage<ProductSummary>(projectStage))
+        .ToSeekResultAsync(ct);
 
     return Results.Ok(result.WithValue("elapsedMs", sw.Elapsed.TotalMilliseconds));
 });

@@ -47,16 +47,6 @@ public sealed class SeekAggregateBuilderTests
     }
 
     [Fact]
-    public void WithStrategy_OnAggregateBuilder_Throws()
-    {
-        var builder = Service().CreateBuilder(Pipeline());
-        Assert.Throws<NotSupportedException>(
-            () => builder.WithStrategy(new OrLogicSeekStrategy(
-                new ServiceCollection().AddSeekKitMongo().BuildServiceProvider()
-                    .GetRequiredService<ISeekValueConverter>())));
-    }
-
-    [Fact]
     public async Task SeekAsync_NullArguments_Throw()
     {
         var seek = Service();

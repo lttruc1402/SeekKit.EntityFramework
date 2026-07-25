@@ -11,9 +11,10 @@ namespace SeekKit.MongoDB.Builders;
 /// with the LINQ builders via <see cref="SeekBuilderCore{T}"/>.
 /// </para>
 /// </summary>
-internal sealed class SeekAggregateBuilder<T> : SeekBuilderCore<T>, ISeekMongoBuilder<T>
+internal sealed class SeekAggregateBuilder<T> : SeekBuilderCore<T>, ISeekMongoAggregateBuilder<T>
 {
     private readonly IAggregateFluent<T> _aggregate;
+    private readonly SeekKitMongoOptions _options;
 
     public SeekAggregateBuilder(
         IAggregateFluent<T> aggregate,
@@ -23,29 +24,37 @@ internal sealed class SeekAggregateBuilder<T> : SeekBuilderCore<T>, ISeekMongoBu
         : base(serializer, valueConverter, options)
     {
         _aggregate = aggregate ?? throw new ArgumentNullException(nameof(aggregate));
+        _options   = options;
     }
 
-    public ISeekMongoBuilder<T> WithRequest(SeekRequest request)
+    public ISeekMongoAggregateBuilder<T> WithRequest(SeekRequest request)
     {
         SetRequest(request);
         return this;
     }
 
-    public ISeekMongoBuilder<T> WithStrategy(ISeekFilterStrategy strategy)
-        => throw new NotSupportedException(
-            "Custom filter strategies are not supported on the aggregation-pipeline builder; " +
-            "it always uses the OR-logic keyset $match filter.");
+    ISeekMongoBuilder<T> ISeekMongoBuilder<T>.WithRequest(SeekRequest request) => WithRequest(request);
 
-    public ISeekMongoBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector)
+    public ISeekMongoAggregateBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector)
     {
         AddSortColumn(keySelector, isDescending: false);
         return this;
     }
 
-    public ISeekMongoBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector)
+    ISeekMongoBuilder<T> ISeekMongoBuilder<T>.OrderBy<TKey>(Expression<Func<T, TKey>> keySelector) => OrderBy(keySelector);
+
+    public ISeekMongoAggregateBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector)
     {
         AddSortColumn(keySelector, isDescending: true);
         return this;
+    }
+
+    ISeekMongoBuilder<T> ISeekMongoBuilder<T>.OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector) => OrderByDescending(keySelector);
+
+    public ISeekMongoBuilder<T, TResult> Select<TResult>(Func<IAggregateFluent<T>, IAggregateFluent<TResult>> transformer)
+    {
+        return new SeekAggregateProjectionBuilder<T, TResult>(
+            _aggregate, SortColumns, transformer, Serializer, ValueConverter, Request, _options);
     }
 
     public ValueTask<SeekResult<T>> ToSeekResultAsync(CancellationToken cancellationToken = default)

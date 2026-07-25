@@ -8,8 +8,9 @@ namespace SeekKit.EntityFramework.Tests.Infrastructure;
 /// </summary>
 public sealed class SeekFixture
 {
-    public ISeekFactory Factory  { get; }
-    public ISeekService  Service  { get; }
+    public ISeekFactory    Factory         { get; }
+    public ISeekService    Service         { get; }
+    public IServiceProvider ServiceProvider { get; }
 
     public SeekFixture()
     {
@@ -25,6 +26,7 @@ public sealed class SeekFixture
 
         var provider = services.BuildServiceProvider();
 
+        ServiceProvider = provider;
         Factory = provider.GetRequiredService<ISeekFactory>();
         Service = provider.GetRequiredService<ISeekService>();
     }

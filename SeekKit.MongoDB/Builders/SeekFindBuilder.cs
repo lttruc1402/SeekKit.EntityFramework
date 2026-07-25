@@ -11,9 +11,10 @@ namespace SeekKit.MongoDB.Builders;
 /// with the other builders via <see cref="SeekBuilderCore{T}"/>.
 /// </para>
 /// </summary>
-internal sealed class SeekFindBuilder<T> : SeekBuilderCore<T>, ISeekMongoBuilder<T>
+internal sealed class SeekFindBuilder<T> : SeekBuilderCore<T>, ISeekMongoFindBuilder<T>
 {
     private readonly IFindFluent<T, T> _find;
+    private readonly SeekKitMongoOptions _options;
 
     public SeekFindBuilder(
         IFindFluent<T, T> find,
@@ -22,30 +23,38 @@ internal sealed class SeekFindBuilder<T> : SeekBuilderCore<T>, ISeekMongoBuilder
         SeekKitMongoOptions options)
         : base(serializer, valueConverter, options)
     {
-        _find = find ?? throw new ArgumentNullException(nameof(find));
+        _find    = find ?? throw new ArgumentNullException(nameof(find));
+        _options = options;
     }
 
-    public ISeekMongoBuilder<T> WithRequest(SeekRequest request)
+    public ISeekMongoFindBuilder<T> WithRequest(SeekRequest request)
     {
         SetRequest(request);
         return this;
     }
 
-    public ISeekMongoBuilder<T> WithStrategy(ISeekFilterStrategy strategy)
-        => throw new NotSupportedException(
-            "Custom filter strategies are not supported on the find builder; " +
-            "it always uses the OR-logic keyset filter.");
+    ISeekMongoBuilder<T> ISeekMongoBuilder<T>.WithRequest(SeekRequest request) => WithRequest(request);
 
-    public ISeekMongoBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector)
+    public ISeekMongoFindBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector)
     {
         AddSortColumn(keySelector, isDescending: false);
         return this;
     }
 
-    public ISeekMongoBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector)
+    ISeekMongoBuilder<T> ISeekMongoBuilder<T>.OrderBy<TKey>(Expression<Func<T, TKey>> keySelector) => OrderBy(keySelector);
+
+    public ISeekMongoFindBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector)
     {
         AddSortColumn(keySelector, isDescending: true);
         return this;
+    }
+
+    ISeekMongoBuilder<T> ISeekMongoBuilder<T>.OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector) => OrderByDescending(keySelector);
+
+    public ISeekMongoBuilder<T, TResult> Select<TResult>(Func<IFindFluent<T, T>, IFindFluent<T, TResult>> transformer)
+    {
+        return new SeekFindProjectionBuilder<T, TResult>(
+            _find, SortColumns, transformer, Serializer, ValueConverter, Request, _options);
     }
 
     public ValueTask<SeekResult<T>> ToSeekResultAsync(CancellationToken cancellationToken = default)

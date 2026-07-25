@@ -57,15 +57,51 @@ await seek.SeekAsync(products.Find(Builders<Product>.Filter.Text("wireless")), r
     b => b.OrderByDescending(p => p.Score).OrderBy(p => p.Id));
 ```
 
+`seek.CreateBuilder(...)` returns an origin-specific builder —
+`ISeekMongoQueryableBuilder<T>` / `ISeekMongoAggregateBuilder<T>` /
+`ISeekMongoFindBuilder<T>` — but all three share `WithRequest`/`OrderBy`/
+`OrderByDescending`/`ToSeekResultAsync`, so ordinary usage doesn't need to care
+which one you got.
+
+## Push-down projection
+
+Every builder origin has a `Select<TResult>` that defers a join/projection to
+run after the keyset filter, sort, and limit — one transformer shape per origin:
+
+```csharp
+// Queryable/collection
+await seek.CreateBuilder(products)
+    .OrderByDescending(p => p.CreatedAt).OrderBy(p => p.Id)
+    .WithRequest(request)
+    .Select(q => q.Select(p => new ProductDto { Id = p.Id, CreatedAt = p.CreatedAt }))
+    .ToSeekResultAsync();
+
+// Aggregation pipeline — append raw BsonDocument $lookup/$project stages
+// (the LINQ3 provider can't translate a typed Lookup<>() here)
+await seek.CreateBuilder(products.Aggregate())
+    .OrderByDescending(p => p.CreatedAt).OrderBy(p => p.Id)
+    .WithRequest(request)
+    .Select(pipeline => pipeline
+        .AppendStage<BsonDocument>(lookupStage)
+        .AppendStage<ProductWithCategory>(projectStage))
+    .ToSeekResultAsync();
+```
+
+`TResult` must expose public properties with the same names/types as the sort
+columns so SeekKit can read cursor values from the projected shape. `WithStrategy`
+exists only on the queryable builder — Mongo has no aggregate/find-specific
+`ISeekFilterStrategy` to switch to.
+
 ## Features
 
 - Constant-time paging — no `skip`, purely index-driven
 - Bidirectional navigation with opaque tokens
 - Paginate collections, LINQ queryables, aggregation pipelines, and find queries
+- Push-down projection via `Select<TResult>` on every builder origin
 - `ObjectId` supported out of the box as sort/tie-breaker column
 - Multi-column sorting with mixed directions
 - Optional HMAC-SHA256 token signing (`config.UseHmacSigning(key)`)
-- DTO projection via `result.Map(...)` preserving all metadata
+- DTO projection via `result.Map(...)` preserving all metadata (in-memory, post-fetch)
 - Targets .NET 8 / 9 / 10 and .NET Standard 2.1
 
 ## Links

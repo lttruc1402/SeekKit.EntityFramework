@@ -5,7 +5,6 @@ global using System.Collections.Frozen;
 #endif
 global using System.Collections.Immutable;
 global using System.Runtime.CompilerServices;
-global using System.Runtime.InteropServices;
 global using Microsoft.EntityFrameworkCore;
 global using Microsoft.Extensions.DependencyInjection;
 global using Microsoft.Extensions.Options;

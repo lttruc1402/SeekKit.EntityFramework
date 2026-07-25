@@ -56,8 +56,39 @@ public interface ISeekBuilder<T>
     ISeekBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector);
 
     /// <summary>
+    /// Defers a join/projection until after ordering, keyset filtering, and the
+    /// look-ahead <c>Take</c> have been applied — so <paramref name="transformer"/>
+    /// only runs against the already-limited row set instead of the full table.
+    /// The projected <typeparamref name="TResult"/> must expose public properties with
+    /// the same names <b>and the same CLR type</b> as the sort columns registered via
+    /// <see cref="OrderBy{TKey}"/> / <see cref="OrderByDescending{TKey}"/>, so SeekKit can
+    /// read cursor values from the projected shape. A same-named property of a different
+    /// type (e.g. sorting by an <c>int Id</c> on the entity but exposing a <c>long Id</c>
+    /// on <typeparamref name="TResult"/>) is not validated up front and can throw or
+    /// silently mis-encode the cursor at fetch time — keep the property type identical.
+    /// </summary>
+    /// <typeparam name="TResult">The projected result type.</typeparam>
+    /// <param name="transformer">Projects the ordered, filtered, limited query to <typeparamref name="TResult"/>.</param>
+    ISeekBuilder<T, TResult> Select<TResult>(Func<IQueryable<T>, IQueryable<TResult>> transformer);
+
+    /// <summary>
     /// Executes the paginated query and returns a <see cref="SeekResult{T}"/>.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     ValueTask<SeekResult<T>> ToSeekResultAsync(CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Fluent builder for executing a projected cursor-paginated query. Obtain an instance
+/// via <see cref="ISeekBuilder{T}.Select{TResult}"/>.
+/// </summary>
+/// <typeparam name="T">The entity type the query, ordering, and keyset filter operate on.</typeparam>
+/// <typeparam name="TResult">The projected result type returned to the caller.</typeparam>
+public interface ISeekBuilder<T, TResult>
+{
+    /// <summary>
+    /// Executes the paginated, projected query and returns a <see cref="SeekResult{TResult}"/>.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    ValueTask<SeekResult<TResult>> ToSeekResultAsync(CancellationToken cancellationToken = default);
 }

@@ -5,6 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-07-25
+
+All three packages (SeekKit.Core, SeekKit.EntityFramework, SeekKit.MongoDB) release
+together at 2.1.0.
+
+### Added
+
+- **SeekKit.EntityFramework:** `ISeekBuilder<T>.Select<TResult>(transformer)` — defers a
+  join/projection until after ordering, keyset filtering, and the look-ahead `Take` have
+  been applied, so the transform only runs against the already-limited row set instead
+  of the full table (one database round trip). Returns `ISeekBuilder<T, TResult>`, whose
+  `ToSeekResultAsync()` yields a `SeekResult<TResult>`. `TResult` must expose public
+  properties with the same names and CLR types as the sort columns registered via
+  `OrderBy`/`OrderByDescending`.
+- **SeekKit.Core:** `SeekPagingAlgorithm` (shared look-ahead pagination algorithm,
+  extracted from `SeekBuilderCore<T>`), `ResultKeyAccessor` (reflection-based cursor
+  value reader for projected types), and `SeekProjectionBuilderBase<T, TResult>` — new
+  reusable building blocks backing the `Select` feature above.
+- **SeekKit.EntityFramework:** `IQueryableHelper` gained matching overloads for the new
+  `Select` projection feature and for the existing `ISeekFactory`/`ISeekService`
+  entry points:
+  - `IQueryable<T>.ToSeekResultAsync<T, TResult>(..., transformer, configure, ...)` —
+    one-call projected pagination, available via `IServiceProvider`, `ISeekFactory`,
+    or `ISeekService`.
+  - `IQueryable<T>.ToSeekBuilder<T>(ISeekFactory[, SeekRequest])` and
+    `IQueryable<T>.ToSeekBuilder<T>(ISeekService[, SeekRequest])` — previously only
+    available via `IServiceProvider`.
+- **SeekKit.MongoDB:** `Select<TResult>` projection on all three builder origins —
+  queryable/collection (`ISeekMongoQueryableBuilder<T>`), aggregation pipeline
+  (`ISeekMongoAggregateBuilder<T>`), and find (`ISeekMongoFindBuilder<T>`). Each defers
+  its join/projection until after the keyset filter, sort, and limit have been applied,
+  reusing the `SeekKit.Core` building blocks above. `TResult` must expose public
+  properties with the same names and CLR types as the sort columns.
+
+### Changed
+
+- **SeekKit.MongoDB:** `ISeekMongoService.CreateBuilder<T>(...)` now returns an
+  origin-specific interface instead of the shared `ISeekMongoBuilder<T>`:
+  `CreateBuilder(IMongoCollection<T>)`/`CreateBuilder(IQueryable<T>)` →
+  `ISeekMongoQueryableBuilder<T>`; `CreateBuilder(IAggregateFluent<T>)` →
+  `ISeekMongoAggregateBuilder<T>`; `CreateBuilder(IFindFluent<T, T>)` →
+  `ISeekMongoFindBuilder<T>`. All three inherit `ISeekMongoBuilder<T>`, so ordinary
+  usage (`var builder = ...`, or assigning the result to an `ISeekMongoBuilder<T>`-typed
+  variable/parameter) keeps compiling unchanged — this is a source-compatible upcast.
+  The one exception is test code that mocks `ISeekMongoService.CreateBuilder` and
+  declares the mock's return type as the literal `ISeekMongoBuilder<T>`; that needs to
+  update to the narrower type.
+- **SeekKit.MongoDB:** `WithStrategy` moved off the shared `ISeekMongoBuilder<T>`
+  interface onto `ISeekMongoQueryableBuilder<T>` only — it's the only origin with a
+  real alternative strategy to switch to (Mongo has no aggregate/find-specific
+  `ISeekFilterStrategy` implementations). Calling it on the aggregate or find builder
+  is now a **compile error** instead of a runtime `NotSupportedException` — every call
+  site that compiled and ran successfully before still does; only code that was already
+  guaranteed to throw at runtime is affected.
+
 ## [2.0.0] - 2026-07-13
 
 See the [migration guide](docs/MIGRATION-2.0.md) for upgrading from 1.x.

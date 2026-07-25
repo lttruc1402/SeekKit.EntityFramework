@@ -35,6 +35,12 @@ public abstract class SeekBuilderCore<T>
     /// <summary>The value converter used to encode/decode keyset values.</summary>
     protected ISeekValueConverter ValueConverter => _valueConverter;
 
+    /// <summary>The token serializer used to encode/decode cursor tokens.</summary>
+    protected ISeekSerializer Serializer => _serializer;
+
+    /// <summary>The pagination request (token + page size) set via <see cref="SetRequest"/>, if any.</summary>
+    protected SeekRequest? Request => _request;
+
     /// <summary>The sort columns registered so far, in priority order.</summary>
     protected IReadOnlyList<ISortColumn<T>> SortColumns => _sortColumns;
 
@@ -75,78 +81,9 @@ public abstract class SeekBuilderCore<T>
         if (_sortColumns.Count == 0)
             throw new InvalidOperationException("At least one order field is required. Use OrderBy() or OrderByDescending().");
 
-        SeekDirection seekDirection = SeekDirection.Next;
-        SeekData? seekData = null;
-
         _request ??= new SeekRequest { PageSize = _options.DefaultPageSize };
 
-        bool isNullToken = string.IsNullOrWhiteSpace(_request.Token);
-
-        if (!isNullToken)
-        {
-            seekData = _serializer.Deserialize(_request.Token!);
-            seekDirection = seekData.Direction;
-        }
-
-        var pageSize = _request.PageSize.GetValueOrDefault(_options.DefaultPageSize);
-        pageSize = Math.Clamp(pageSize, _options.MinPageSize, _options.MaxPageSize);
-
-        // A cursor with no values (malformed/first-page fallback) applies no filter.
-        var effectiveSeekData = seekData is { Values.Count: > 0 } ? seekData : null;
-
-        // Look-ahead: fetch one extra row to detect whether a further page exists.
-        var items = await FetchAsync(effectiveSeekData, seekDirection, pageSize + 1, cancellationToken);
-
-        var hasMore = items.Count > pageSize;
-        if (hasMore)
-            items.RemoveAt(items.Count - 1);
-
-        if (seekDirection == SeekDirection.Previous)
-            items.Reverse();
-
-        string? nextToken = null;
-        string? previousToken = null;
-
-        if (items.Count > 0)
-        {
-            if (seekDirection == SeekDirection.Next)
-            {
-                previousToken = isNullToken
-                    ? null
-                    : CreateCursor(items[0], SeekDirection.Previous);
-
-                nextToken = hasMore
-                    ? CreateCursor(items[^1], SeekDirection.Next)
-                    : null;
-            }
-            else
-            {
-                previousToken = hasMore
-                    ? CreateCursor(items[0], SeekDirection.Previous)
-                    : null;
-
-                nextToken = CreateCursor(items[^1], SeekDirection.Next);
-            }
-        }
-
-        var hasNext = seekDirection == SeekDirection.Next
-            ? hasMore
-            : !isNullToken;
-
-        var hasPrevious = seekDirection == SeekDirection.Next
-            ? !isNullToken
-            : hasMore;
-
-        return new SeekResult<T>
-        {
-            Items = items.AsReadOnly(),
-            NextToken = nextToken,
-            PreviousToken = previousToken,
-            HasNext = hasNext,
-            HasPrevious = hasPrevious,
-            Count = items.Count,
-            PageMetadata = new PageMetadata { PageSize = pageSize, RequestedAt = DateTime.UtcNow },
-        };
+        return await SeekPagingAlgorithm.ExecuteAsync(_request, _options, _serializer, FetchAsync, CreateCursor, cancellationToken);
     }
 
     private static string GetPropertyPath<TKey>(Expression<Func<T, TKey>> expression)

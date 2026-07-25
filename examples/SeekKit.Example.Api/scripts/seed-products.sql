@@ -29,16 +29,35 @@ GO
 USE SeekKitDemo;
 GO
 
+-- A handful of categories, looked up by /products/projected to demonstrate
+-- ISeekBuilder<T>.Select<TResult> (push-down projection/join).
+IF OBJECT_ID(N'dbo.Categories', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Categories
+    (
+        Id   INT           NOT NULL IDENTITY(1, 1),
+        Name NVARCHAR(64)  NOT NULL,
+        CONSTRAINT PK_Categories PRIMARY KEY CLUSTERED (Id)
+    );
+
+    INSERT INTO dbo.Categories (Name)
+    VALUES (N'Electronics'), (N'Home & Kitchen'), (N'Books'), (N'Toys'), (N'Sporting Goods');
+END
+GO
+
 IF OBJECT_ID(N'dbo.Products', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.Products
     (
-        Id        BIGINT         NOT NULL,
-        Name      NVARCHAR(64)   NOT NULL,
-        Price     DECIMAL(18, 2) NOT NULL,
-        CreatedAt DATETIME2(0)   NOT NULL,
-        IsActive  BIT            NOT NULL,
-        CONSTRAINT PK_Products PRIMARY KEY CLUSTERED (Id)
+        Id         BIGINT         NOT NULL,
+        Name       NVARCHAR(64)   NOT NULL,
+        Price      DECIMAL(18, 2) NOT NULL,
+        CreatedAt  DATETIME2(0)   NOT NULL,
+        IsActive   BIT            NOT NULL,
+        CategoryId INT            NOT NULL,
+        CONSTRAINT PK_Products PRIMARY KEY CLUSTERED (Id),
+        CONSTRAINT FK_Products_Categories FOREIGN KEY (CategoryId)
+            REFERENCES dbo.Categories (Id)
     );
 
     -- Composite index matching the API's sort: OrderByDescending(CreatedAt).OrderBy(Id)
@@ -73,14 +92,15 @@ BEGIN
         FROM Ten a CROSS JOIN Ten b CROSS JOIN Ten c
              CROSS JOIN Ten d CROSS JOIN Ten e CROSS JOIN Ten f
     )
-    INSERT INTO dbo.Products WITH (TABLOCK) (Id, Name, Price, CreatedAt, IsActive)
+    INSERT INTO dbo.Products WITH (TABLOCK) (Id, Name, Price, CreatedAt, IsActive, CategoryId)
     SELECT
         @Existing + rn,
         CONCAT(N'Product ', @Existing + rn),
         CAST((ABS(CHECKSUM(NEWID())) % 999900 + 100) / 100.0 AS DECIMAL(18, 2)),
         -- Spread CreatedAt over ~10 years (2015-2025), one second per step, wrapping
         DATEADD(SECOND, (@Existing + rn) % 315360000, '2015-01-01'),
-        CASE WHEN (@Existing + rn) % 10 = 0 THEN 0 ELSE 1 END
+        CASE WHEN (@Existing + rn) % 10 = 0 THEN 0 ELSE 1 END,
+        (@Existing + rn) % 5 + 1   -- cycle through the 5 seeded categories
     FROM Tally;
 
     SET @Existing += @ToInsert;

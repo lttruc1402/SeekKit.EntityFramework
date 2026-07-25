@@ -8,9 +8,9 @@ comparison on a large collection.
 
 | File | Purpose |
 |------|---------|
-| [`Program.cs`](Program.cs) | Minimal API: `/products` (seek), `/products/skip` (skip/limit), `/products/union` (LINQ union), `/products/union-aggregate` (aggregation pipeline), `/products/find` (BSON find filter) |
+| [`Program.cs`](Program.cs) | Minimal API: `/products` (seek), `/products/projected` (seek + push-down `$lookup`), `/products/skip` (skip/limit), `/products/union` (LINQ union), `/products/union-aggregate` (aggregation pipeline), `/products/find` (BSON find filter) |
 | [`docker-compose.yml`](docker-compose.yml) | MongoDB 7 + the API |
-| [`scripts/seed-products.js`](scripts/seed-products.js) | Bulk-generates documents (resumable, batched) |
+| [`scripts/seed-products.js`](scripts/seed-products.js) | Bulk-generates documents in `products` + a `categories` lookup collection (resumable, batched) |
 | [`Dockerfile`](Dockerfile) | Multi-stage build of the API |
 
 ## Run it
@@ -60,6 +60,37 @@ curl "http://localhost:8081/products?pageSize=20&token=eyJ0eXBlIjoiTmV4dCIs..."
 The response shape is identical to the EF Core example — same
 `SeekResult<T>`, same token format — that's the point of the shared
 SeekKit.Core contracts.
+
+### Cursor pagination with a push-down projection — `Select`
+
+Each product has a `CategoryId` pointing into a `categories` collection.
+`GET /products/projected` returns a joined, DTO-shaped page using
+`ISeekMongoAggregateBuilder<T>.Select<TResult>`:
+
+```csharp
+var result = await seek
+    .CreateBuilder(products.Aggregate())
+    .OrderByDescending(p => p.CreatedAt)
+    .OrderBy(p => p.Id)
+    .WithRequest(new SeekRequest { Token = token, PageSize = pageSize })
+    .Select(pipeline => pipeline
+        .AppendStage<BsonDocument>(lookupStage)     // $lookup into "categories"
+        .AppendStage<ProductSummary>(projectStage)) // $project into the DTO shape
+    .ToSeekResultAsync(ct);
+```
+
+```bash
+curl "http://localhost:8081/products/projected?pageSize=20"
+```
+
+The `$lookup`/`$project` stages only run against the already keyset-filtered,
+sorted, and `$limit`-ed page — Mongo never looks up categories for the whole
+collection. They're appended as raw `BsonDocument` pipeline stages rather than
+a typed `Lookup<>()`/LINQ `.Project()`, because the LINQ3 provider can't
+translate `BsonDocument` indexer chains; see [`Program.cs`](Program.cs) for the
+full stage definitions. `ProductSummary` must expose the same sort-column
+names/types as `Product` (`Id`, `CreatedAt`) so SeekKit can read cursor values
+from the projected shape; see [`Data/ProductSummary.cs`](Data/ProductSummary.cs).
 
 ### Skip/limit — for comparison
 

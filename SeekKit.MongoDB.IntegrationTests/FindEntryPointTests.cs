@@ -61,4 +61,36 @@ public sealed class FindEntryPointTests : IntegrationTestBase
         Assert.Equal(30, p1.Items[0].Rank);
         Assert.Equal(p1.Items.Select(x => x.Rank), back.Items.Select(x => x.Rank));
     }
+
+    [Fact]
+    public async Task Select_ForwardTraversal_AppliesProjection()
+    {
+        var collection = await Fixture.SeedAsync("find_select", 25);
+
+        var allDisplays = new List<string>();
+        string? token = null;
+        int guard = 0;
+        do
+        {
+            var page = await Seek
+                .CreateBuilder(collection.Find(FilterDefinition<Product>.Empty))
+                .WithRequest(new SeekRequest { Token = token, PageSize = 6 })
+                .OrderBy(p => p.Rank)
+                .OrderBy(p => p.Id)
+                .Select(f => f.Project(Builders<Product>.Projection.Expression(p => new
+                {
+                    p.Id,
+                    p.Rank,
+                    Display = p.Name.ToUpper()
+                })))
+                .ToSeekResultAsync();
+
+            allDisplays.AddRange(page.Items.Select(x => x.Display));
+            token = page.NextToken;
+            if (++guard > 1000) throw new Exception("runaway pagination");
+        } while (token != null);
+
+        Assert.Equal(25, allDisplays.Count);
+        Assert.Equal(25, allDisplays.Distinct().Count());
+    }
 }

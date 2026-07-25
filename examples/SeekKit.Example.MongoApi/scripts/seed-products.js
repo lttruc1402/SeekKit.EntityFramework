@@ -22,6 +22,17 @@ const col = dbo.getCollection("products");
 const archive = dbo.getCollection("products_archive");
 const TARGET_ARCHIVE = Math.floor(TARGET_DOCS / 10);
 
+// A handful of categories, looked up by /products/projected to demonstrate
+// ISeekMongoAggregateBuilder<T>.Select<TResult> (push-down $lookup).
+const categories = dbo.getCollection("categories");
+if (categories.estimatedDocumentCount() === 0) {
+  categories.insertMany(
+    ["Electronics", "Home & Kitchen", "Books", "Toys", "Sporting Goods"]
+      .map((Name) => ({ Name }))
+  );
+}
+const categoryIds = categories.find().toArray().map((c) => c._id);
+
 // Compound index matching the API's sort: OrderByDescending(CreatedAt).OrderBy(Id).
 // This is what makes keyset pagination O(page size) instead of O(offset).
 col.createIndex({ CreatedAt: -1, _id: 1 });
@@ -41,11 +52,12 @@ while (inserted < TARGET_DOCS) {
   for (let i = 0; i < n; i++) {
     const seq = inserted + i;
     batch[i] = {
-      Name:      `Product ${seq + 1}`,
-      Price:     Math.round(Math.random() * 999_900 + 100) / 100,
+      Name:       `Product ${seq + 1}`,
+      Price:      Math.round(Math.random() * 999_900 + 100) / 100,
       // Spread CreatedAt over ~10 years, one second per step, wrapping
-      CreatedAt: new Date(baseTime + (seq % 315_360_000) * 1000),
-      IsActive:  seq % 10 !== 0,
+      CreatedAt:  new Date(baseTime + (seq % 315_360_000) * 1000),
+      IsActive:   seq % 10 !== 0,
+      CategoryId: categoryIds[seq % categoryIds.length],
     };
   }
 

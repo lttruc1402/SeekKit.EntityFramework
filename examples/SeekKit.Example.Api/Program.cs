@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SeekKit.Core;
 using SeekKit.Core.Models;
 using SeekKit.EntityFramework;
+using SeekKit.EntityFramework.Builders;
 using SeekKit.EntityFramework.Core;
 using SeekKit.Example.Api.Data;
 
@@ -41,6 +42,35 @@ app.MapGet("/products", async (
         b => b.OrderByDescending(p => p.CreatedAt)
               .OrderBy(p => p.Id),          // unique tie-breaker — always last
         ct);
+
+    return Results.Ok(result.WithValue("elapsedMs", sw.Elapsed.TotalMilliseconds));
+});
+
+// ── Cursor pagination with a push-down projection (Select) ──────────────────
+// Demonstrates ISeekBuilder<T>.Select<TResult>: the join to Categories only
+// runs against the already ordered/filtered/limited page, not the whole table.
+app.MapGet("/products/projected", async (
+    ISeekService seek,
+    ShopDbContext db,
+    string? token,
+    int? pageSize,
+    CancellationToken ct) =>
+{
+    var sw = Stopwatch.StartNew();
+
+    var result = await seek
+        .CreateBuilder(db.Products.AsNoTracking())
+        .OrderByDescending(p => p.CreatedAt)
+        .OrderBy(p => p.Id)               // unique tie-breaker — always last
+        .WithRequest(new SeekRequest { Token = token, PageSize = pageSize })
+        .Select(q => q.Select(p => new ProductSummary
+        {
+            Id           = p.Id,
+            CreatedAt    = p.CreatedAt,
+            Name         = p.Name,
+            CategoryName = p.Category!.Name
+        }))
+        .ToSeekResultAsync(ct);
 
     return Results.Ok(result.WithValue("elapsedMs", sw.Elapsed.TotalMilliseconds));
 });

@@ -12,13 +12,13 @@ public interface ISeekMongoService
     /// <summary>
     /// Creates a fluent <see cref="ISeekMongoBuilder{T}"/> for the given collection.
     /// </summary>
-    ISeekMongoBuilder<T> CreateBuilder<T>(IMongoCollection<T> collection);
+    ISeekMongoQueryableBuilder<T> CreateBuilder<T>(IMongoCollection<T> collection);
 
     /// <summary>
     /// Creates a fluent <see cref="ISeekMongoBuilder{T}"/> for a queryable —
     /// typically <c>collection.AsQueryable().Where(...)</c> with filters already applied.
     /// </summary>
-    ISeekMongoBuilder<T> CreateBuilder<T>(IQueryable<T> query);
+    ISeekMongoQueryableBuilder<T> CreateBuilder<T>(IQueryable<T> query);
 
     /// <summary>
     /// Creates a fluent <see cref="ISeekMongoBuilder{T}"/> for an aggregation
@@ -33,7 +33,7 @@ public interface ISeekMongoService
     /// index. The tie-breaker column must be globally unique across the whole
     /// pipeline output.
     /// </remarks>
-    ISeekMongoBuilder<T> CreateBuilder<T>(IAggregateFluent<T> aggregate);
+    ISeekMongoAggregateBuilder<T> CreateBuilder<T>(IAggregateFluent<T> aggregate);
 
     /// <summary>
     /// Creates a fluent <see cref="ISeekMongoBuilder{T}"/> for a find query —
@@ -42,7 +42,7 @@ public interface ISeekMongoService
     /// LINQ provider can't express). SeekKit AND-s the keyset predicate into the
     /// query filter and appends a sort and a limit.
     /// </summary>
-    ISeekMongoBuilder<T> CreateBuilder<T>(IFindFluent<T, T> find);
+    ISeekMongoFindBuilder<T> CreateBuilder<T>(IFindFluent<T, T> find);
 
     /// <summary>
     /// Paginates the whole collection in a single call.
@@ -113,25 +113,25 @@ internal sealed class SeekMongoService : ISeekMongoService
         _options        = options;
     }
 
-    public ISeekMongoBuilder<T> CreateBuilder<T>(IMongoCollection<T> collection)
+    public ISeekMongoQueryableBuilder<T> CreateBuilder<T>(IMongoCollection<T> collection)
     {
         if (collection is null) throw new ArgumentNullException(nameof(collection));
         return new SeekMongoBuilder<T>(collection.AsQueryable(), _serializer, _valueConverter, _options.Value);
     }
 
-    public ISeekMongoBuilder<T> CreateBuilder<T>(IQueryable<T> query)
+    public ISeekMongoQueryableBuilder<T> CreateBuilder<T>(IQueryable<T> query)
     {
         if (query is null) throw new ArgumentNullException(nameof(query));
         return new SeekMongoBuilder<T>(query, _serializer, _valueConverter, _options.Value);
     }
 
-    public ISeekMongoBuilder<T> CreateBuilder<T>(IAggregateFluent<T> aggregate)
+    public ISeekMongoAggregateBuilder<T> CreateBuilder<T>(IAggregateFluent<T> aggregate)
     {
         if (aggregate is null) throw new ArgumentNullException(nameof(aggregate));
         return new SeekAggregateBuilder<T>(aggregate, _serializer, _valueConverter, _options.Value);
     }
 
-    public ISeekMongoBuilder<T> CreateBuilder<T>(IFindFluent<T, T> find)
+    public ISeekMongoFindBuilder<T> CreateBuilder<T>(IFindFluent<T, T> find)
     {
         if (find is null) throw new ArgumentNullException(nameof(find));
         return new SeekFindBuilder<T>(find, _serializer, _valueConverter, _options.Value);

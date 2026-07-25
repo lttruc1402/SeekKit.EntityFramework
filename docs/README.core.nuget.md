@@ -21,6 +21,10 @@ package:
   `TypeConverter<T>`.
 - **LINQ keyset strategies** — provider-neutral expression building, including
   the OR-expanded predicate strategy that works on any LINQ provider.
+- **Push-down projection building blocks** — the paging algorithm, cursor-value
+  reflection, and projected-builder base class backing both providers'
+  `Select<TResult>` (deferring a join/projection until after the page is
+  limited).
 
 ## Links
 

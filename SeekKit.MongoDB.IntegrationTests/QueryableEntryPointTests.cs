@@ -103,6 +103,39 @@ public sealed class QueryableEntryPointTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task Select_ForwardTraversal_MatchesNonProjectedOrder()
+    {
+        var collection = await Fixture.SeedAsync("queryable_select", 30);
+
+        var expected = await TraverseForwardAsync(token => Seek.SeekAsync(
+            collection.AsQueryable(),
+            new SeekRequest { Token = token, PageSize = 7 },
+            b => b.OrderBy(p => p.Rank).OrderBy(p => p.Id)).AsTask());
+
+        var allNames = new List<string>();
+        string? projToken = null;
+        int guard = 0;
+        do
+        {
+            var page = await Seek
+                .CreateBuilder(collection.AsQueryable())
+                .WithRequest(new SeekRequest { Token = projToken, PageSize = 7 })
+                .OrderBy(p => p.Rank)
+                .OrderBy(p => p.Id)
+                .Select(q => q.Select(p => new { p.Id, p.Rank, Display = p.Name.ToUpper() }))
+                .ToSeekResultAsync();
+
+            allNames.AddRange(page.Items.Select(x => x.Display));
+            projToken = page.NextToken;
+            if (++guard > 1000) throw new Exception("runaway pagination");
+        } while (projToken != null);
+
+        Assert.Equal(expected.Select(p => p.Rank), Enumerable.Range(1, 30));
+        Assert.Equal(30, allNames.Count);
+        Assert.All(allNames, n => Assert.Equal(n, n.ToUpper()));
+    }
+
+    [Fact]
     public async Task Concat_IsKnownToFail_DocumentedLimitation()
     {
         // Documents why the library uses .Union() not .Concat(): the LINQ provider

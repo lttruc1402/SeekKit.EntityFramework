@@ -67,6 +67,7 @@ Use SeekKit for infinite scroll, activity feeds, data exports, sync APIs, admin 
 - 🔀 **Bidirectional** — navigate forward *and* backward with `NextToken` / `PreviousToken`
 - 🗄️ **Database-tuned strategies** — tuple comparison, `UNION ALL`, or OR-predicates, chosen per engine
 - 📇 **Multi-column sorting** — mixed ascending/descending directions supported
+- 🔗 **Push-down projection** — `Select<TResult>` defers a join/projection until after the page is limited, so a join never runs against the whole table
 - 🔐 **Opaque tokens** — clients never see your key values
 - 🧩 **Pure LINQ** — no raw SQL; EF Core translates everything to provider-native queries
 - 🛠️ **Extensible** — custom type converters, custom serializers, custom filter strategies
@@ -188,6 +189,50 @@ SeekResult<ProductDto> dto = page.Map(p => new ProductDto
     Price = p.Price
 });
 ```
+
+`Map` runs **after** the page is fetched — it reshapes rows already in memory. It's
+fine for renaming/computing fields, but a join written inside it still has to hit
+the database separately (or N+1) for each item.
+
+### Push-down projection — `Select`
+
+`ISeekBuilder<T>.Select<TResult>(transformer)` instead pushes a join/projection
+**into the same query**, and defers it until *after* ordering, keyset filtering,
+and the look-ahead `Take` have already limited the row set — so the join only
+ever runs against the page you asked for, not the whole table, in a single
+database round trip:
+
+```csharp
+SeekResult<OrderDto> page = await seek
+    .CreateBuilder(db.Orders)
+    .OrderByDescending(o => o.CreatedAt)
+    .OrderBy(o => o.Id)                 // unique tie-breaker — always last
+    .WithRequest(request)
+    .Select(q => q.Select(o => new OrderDto
+    {
+        Id           = o.Id,
+        CreatedAt    = o.CreatedAt,
+        CustomerName = o.Customer.Name  // join pushed to run only on this page
+    }))
+    .ToSeekResultAsync();
+```
+
+`Select` returns `ISeekBuilder<T, TResult>`, whose `ToSeekResultAsync()` yields
+`SeekResult<TResult>` — same tokens, same bidirectional navigation, same
+metadata, just a different item shape.
+
+**The one rule:** `TResult` must expose public properties with the **same names
+and CLR types** as the sort columns registered via `OrderBy`/`OrderByDescending`
+on `T` (here, `Id` and `CreatedAt`) — cursor values are read back from the
+projected shape by matching those names. Get a name wrong and `Select()` throws
+`InvalidOperationException` immediately, before any query runs; get the *type*
+wrong (e.g. project `Id` as `long` when it's `int` on the entity) and it isn't
+caught for you, so keep the types matching too.
+
+| `Select` vs `Map` | Runs | Best for |
+|---|---|---|
+| `Select<TResult>(transformer)` | Inside the query, before materialization | Joins/projections you want pushed to the database |
+| `Map(mapper)` | In memory, after materialization | Reshaping already-fetched items, no new data needed |
 
 ### Bidirectional navigation
 
@@ -380,7 +425,17 @@ Registers `ISeekService` and friends as singletons.
 | `OrderBy(expr)` / `OrderByDescending(expr)` | Adds keyset sort columns (priority = call order) |
 | `WithUnionAll()` / `WithOrPredicate()` / `WithTupleComparison()` | Pins a built-in strategy |
 | `WithStrategy(ISeekFilterStrategy)` | Pins a custom strategy |
+| `Select<TResult>(transformer)` | Defers a join/projection to run after the page is limited; returns `ISeekBuilder<T, TResult>` |
 | `ToSeekResultAsync(ct)` | Executes and returns `SeekResult<T>` |
+
+### `ISeekBuilder<T, TResult>`
+
+Returned by `ISeekBuilder<T>.Select<TResult>(transformer)`. Ordering, filtering,
+and strategy are already locked in from the `T`-typed builder, so this only has:
+
+| Method | Description |
+|--------|-------------|
+| `ToSeekResultAsync(ct)` | Executes the projected query and returns `SeekResult<TResult>` |
 
 ---
 
@@ -429,8 +484,23 @@ var page = await seek.CreateBuilder(db.Products)
     .ToSeekResultAsync();
 ```
 
-There are also `IQueryable<T>` extension methods (`ToSeekResultAsync(...)`) if you
-have an `ISeekService`, `ISeekFactory`, or `IServiceProvider` in hand.
+There are also `IQueryable<T>` extension methods (`IQueryableHelper`) if you have
+an `ISeekService`, `ISeekFactory`, or `IServiceProvider` in hand instead of
+building the fluent chain yourself:
+
+| Extension | Returns |
+|-----------|---------|
+| `query.ToSeekResultAsync(serviceProvider\|seekFactory\|seekService, request, configure, ct)` | `SeekResult<T>` |
+| `query.ToSeekResultAsync<T, TResult>(..., transformer, configure, ct)` | `SeekResult<TResult>` — one-call `Select` |
+| `query.ToSeekBuilder(serviceProvider\|seekFactory\|seekService[, request])` | `ISeekBuilder<T>` |
+
+```csharp
+// One-call projected pagination without touching the fluent builder directly
+SeekResult<OrderDto> page = await db.Orders.ToSeekResultAsync(
+    seekFactory, request,
+    transformer: q => q.Select(o => new OrderDto { Id = o.Id, CreatedAt = o.CreatedAt }),
+    configure:   b => b.OrderByDescending(o => o.CreatedAt).OrderBy(o => o.Id));
+```
 
 ### MongoDB — `ISeekMongoService`
 
@@ -472,6 +542,63 @@ The keyset predicate becomes an indexable `$or` filter — create a compound ind
 matching your sort (e.g. `{ CreatedAt: -1, _id: 1 }`). For the aggregation and
 find overloads, the sort columns must be real fields on the output and the last
 one globally unique.
+
+`seek.CreateBuilder(...)` returns an origin-specific builder interface —
+`ISeekMongoQueryableBuilder<T>`, `ISeekMongoAggregateBuilder<T>`, or
+`ISeekMongoFindBuilder<T>` — matching the source you passed in. All three extend
+`ISeekMongoBuilder<T>` (`WithRequest`/`OrderBy`/`OrderByDescending`/`ToSeekResultAsync`),
+so ordinary usage doesn't need to care; the split only matters because each
+origin's `Select` takes a different transformer shape (see below), and
+`WithStrategy` exists **only** on the queryable builder — Mongo has no
+aggregate/find-specific `ISeekFilterStrategy` to switch to, so calling it on the
+other two is now a compile error instead of a runtime one.
+
+### Push-down projection — `Select`
+
+Just like the EF Core provider, every Mongo builder origin has a `Select<TResult>`
+that defers a join/projection until after the keyset filter, sort, and limit —
+one transformer shape per origin, matching what that origin's driver API supports:
+
+```csharp
+// Queryable/collection — Func<IQueryable<T>, IQueryable<TResult>>
+SeekResult<ProductDto> page = await seek
+    .CreateBuilder(products)                 // ISeekMongoQueryableBuilder<Product>
+    .OrderByDescending(p => p.CreatedAt)
+    .OrderBy(p => p.Id)
+    .WithRequest(request)
+    .Select(q => q.Select(p => new ProductDto { Id = p.Id, CreatedAt = p.CreatedAt }))
+    .ToSeekResultAsync();
+
+// Aggregation pipeline — Func<IAggregateFluent<T>, IAggregateFluent<TResult>>
+// Use raw BsonDocument stages for $lookup/$project — the LINQ3 provider can't
+// translate a typed Lookup<>() or BsonDocument indexer chains.
+SeekResult<ProductWithCategory> page = await seek
+    .CreateBuilder(products.Aggregate())     // ISeekMongoAggregateBuilder<Product>
+    .OrderByDescending(p => p.CreatedAt)
+    .OrderBy(p => p.Id)
+    .WithRequest(request)
+    .Select(pipeline => pipeline
+        .AppendStage<BsonDocument>(lookupStage)      // $lookup into "categories"
+        .AppendStage<ProductWithCategory>(projectStage)) // $project into the DTO
+    .ToSeekResultAsync();
+
+// Find — Func<IFindFluent<T, T>, IFindFluent<T, TResult>>
+SeekResult<ProductDto> page = await seek
+    .CreateBuilder(products.Find(filter))    // ISeekMongoFindBuilder<Product>
+    .OrderByDescending(p => p.CreatedAt)
+    .OrderBy(p => p.Id)
+    .WithRequest(request)
+    .Select(f => f.Project(Builders<Product>.Projection.Expression(
+        p => new ProductDto { Id = p.Id, CreatedAt = p.CreatedAt })))
+    .ToSeekResultAsync();
+```
+
+Same rule as EF: the projected type must expose public properties with the same
+names/types as the sort columns (`Id`, `CreatedAt` above), and `Select` returns
+`ISeekMongoBuilder<T, TResult>` (`ToSeekResultAsync()` → `SeekResult<TResult>`)
+regardless of which origin produced it. See
+[`examples/SeekKit.Example.MongoApi`](examples/SeekKit.Example.MongoApi)'s
+`GET /products/projected` for the full, runnable `$lookup` version.
 
 ### Both providers in one app
 

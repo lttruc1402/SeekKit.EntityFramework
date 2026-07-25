@@ -9,4 +9,5 @@ public class Product
     public double Price { get; set; }
     public DateTime CreatedAt { get; set; }
     public bool IsActive { get; set; }
+    public ObjectId CategoryId { get; set; }
 }

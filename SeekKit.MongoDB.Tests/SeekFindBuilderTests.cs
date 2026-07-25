@@ -45,17 +45,6 @@ public sealed class SeekFindBuilderTests
     }
 
     [Fact]
-    public void WithStrategy_OnFindBuilder_Throws()
-    {
-        var builder = Service().CreateBuilder(Find());
-        var converter = new ServiceCollection().AddSeekKitMongo().BuildServiceProvider()
-            .GetRequiredService<ISeekValueConverter>();
-
-        Assert.Throws<NotSupportedException>(
-            () => builder.WithStrategy(new OrLogicSeekStrategy(converter)));
-    }
-
-    [Fact]
     public async Task SeekAsync_NullArguments_Throw()
     {
         var seek = Service();

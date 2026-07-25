@@ -27,6 +27,9 @@ public abstract class SeekBuilderBase<T> : SeekBuilderCore<T>
         _query = query ?? throw new ArgumentNullException(nameof(query));
     }
 
+    /// <summary>The base queryable this builder was constructed with.</summary>
+    protected IQueryable<T> Query => _query;
+
     /// <summary>Overrides the filter strategy for this query.</summary>
     protected void SetStrategy(ISeekFilterStrategy strategy)
     {
@@ -38,6 +41,16 @@ public abstract class SeekBuilderBase<T> : SeekBuilderCore<T>
     /// (e.g. the strategy resolved from provider-specific options).
     /// </summary>
     protected abstract ISeekFilterStrategy ResolveDefaultStrategy();
+
+    /// <summary>
+    /// Returns the filter strategy for this builder, resolving and caching the
+    /// default (via <see cref="ResolveDefaultStrategy"/>) if none was set explicitly.
+    /// </summary>
+    protected ISeekFilterStrategy ResolveStrategy()
+    {
+        _filterStrategy ??= ResolveDefaultStrategy();
+        return _filterStrategy;
+    }
 
     /// <summary>
     /// Executes <paramref name="query"/> asynchronously using the provider's
@@ -55,12 +68,12 @@ public abstract class SeekBuilderBase<T> : SeekBuilderCore<T>
 
         if (seekData is not null)
         {
-            _filterStrategy ??= ResolveDefaultStrategy();
+            var strategy = ResolveStrategy();
 
-            if (_filterStrategy is IPageSizeAware pageSizeFilter)
+            if (strategy is IPageSizeAware pageSizeFilter)
                 pageSizeFilter.SetPageSize(limit);
 
-            query = _filterStrategy.ApplyFilter(query, Expression.Parameter(typeof(T), "e"), SortColumns, seekData);
+            query = strategy.ApplyFilter(query, Expression.Parameter(typeof(T), "e"), SortColumns, seekData);
         }
 
         return MaterializeAsync(query.Take(limit), cancellationToken);

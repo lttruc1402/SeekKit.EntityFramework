@@ -8,9 +8,9 @@ performance comparison on a huge table.
 
 | File | Purpose |
 |------|---------|
-| [`Program.cs`](Program.cs) | Minimal API: `/products` (seek) and `/products/offset` (offset) |
+| [`Program.cs`](Program.cs) | Minimal API: `/products` (seek), `/products/projected` (seek + push-down projection), `/products/offset` (offset) |
 | [`docker-compose.yml`](docker-compose.yml) | SQL Server 2022 + the API |
-| [`scripts/seed-products.sql`](scripts/seed-products.sql) | Creates the DB and bulk-generates rows (resumable, batched) |
+| [`scripts/seed-products.sql`](scripts/seed-products.sql) | Creates the DB (`Products` + `Categories`) and bulk-generates rows (resumable, batched) |
 | [`Dockerfile`](Dockerfile) | Multi-stage build of the API |
 
 ## Run it
@@ -72,6 +72,35 @@ Response:
   "elapsedMs": 3.2
 }
 ```
+
+### Cursor pagination with a push-down projection — `Select`
+
+`Products` has a `CategoryId` FK into a `Categories` table. `GET /products/projected`
+returns a joined, DTO-shaped page using `ISeekBuilder<T>.Select<TResult>`:
+
+```csharp
+var result = await seek
+    .CreateBuilder(db.Products.AsNoTracking())
+    .OrderByDescending(p => p.CreatedAt)
+    .OrderBy(p => p.Id)
+    .WithRequest(new SeekRequest { Token = token, PageSize = pageSize })
+    .Select(q => q.Select(p => new ProductSummary
+    {
+        Id = p.Id, CreatedAt = p.CreatedAt, Name = p.Name,
+        CategoryName = p.Category!.Name
+    }))
+    .ToSeekResultAsync(ct);
+```
+
+```bash
+curl "http://localhost:8080/products/projected?pageSize=20"
+```
+
+The join to `Categories` only runs against the already ordered, keyset-filtered,
+and `Take`-limited page — SQL Server never joins the whole table. `ProductSummary`
+must expose the same sort-column names/types as `Product` (`Id`, `CreatedAt`) so
+SeekKit can read cursor values from the projected shape; see
+[`Data/ProductSummary.cs`](Data/ProductSummary.cs).
 
 ### Offset pagination — for comparison
 

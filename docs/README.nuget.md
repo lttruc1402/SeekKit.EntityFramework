@@ -41,14 +41,39 @@ public class ProductService(ISeekService seek, AppDbContext db)
 The response carries opaque `nextToken` / `previousToken` values — the client
 just passes them back to navigate. Bidirectional, URL-safe, no leaked keys.
 
+## Push-down projection
+
+`ISeekBuilder<T>.Select<TResult>(transformer)` defers a join/projection until
+*after* the keyset filter, sort, and look-ahead `Take` have already limited the
+row set — so a join to another table only ever runs against the page you asked
+for, in one database round trip:
+
+```csharp
+SeekResult<OrderDto> page = await seek
+    .CreateBuilder(db.Orders)
+    .OrderByDescending(o => o.CreatedAt)
+    .OrderBy(o => o.Id)
+    .WithRequest(request)
+    .Select(q => q.Select(o => new OrderDto
+    {
+        Id = o.Id, CreatedAt = o.CreatedAt, CustomerName = o.Customer.Name
+    }))
+    .ToSeekResultAsync();
+```
+
+`TResult` must expose public properties with the same names/types as the sort
+columns (`Id`, `CreatedAt` here) so SeekKit can read cursor values from the
+projected shape.
+
 ## Features
 
 - Constant-time paging — no `OFFSET`, purely index-driven seeks
 - Bidirectional navigation with opaque tokens
 - Database-tuned strategies: tuple comparison, `UNION ALL`, OR-predicates
 - Multi-column sorting with mixed directions
+- Push-down projection via `Select<TResult>` — joins run only on the limited page
 - Optional HMAC-SHA256 token signing (`config.UseHmacSigning(key)`)
-- DTO projection via `result.Map(...)` preserving all metadata
+- DTO projection via `result.Map(...)` preserving all metadata (in-memory, post-fetch)
 - Extensible: custom type converters, serializers, filter strategies
 - Targets .NET 8 / 9 / 10 (EF Core 8/9/10) and .NET Standard 2.1 (EF Core 5)
 

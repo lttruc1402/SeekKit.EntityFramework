@@ -62,6 +62,12 @@ internal sealed class SeekBuilder<T> : SeekBuilderBase<T>, ISeekBuilder<T>
         return this;
     }
 
+    public ISeekBuilder<T, TResult> Select<TResult>(Func<IQueryable<T>, IQueryable<TResult>> transformer)
+    {
+        return new SeekProjectionBuilder<T, TResult>(
+            Query, SortColumns, ResolveStrategy(), transformer, Serializer, ValueConverter, Request, _options);
+    }
+
     protected override ISeekFilterStrategy ResolveDefaultStrategy()
         => _options.Strategy.GetFilterStrategy(ValueConverter);
 

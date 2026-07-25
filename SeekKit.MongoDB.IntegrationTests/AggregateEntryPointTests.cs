@@ -78,4 +78,56 @@ public sealed class AggregateEntryPointTests : IntegrationTestBase
 
         Assert.Equal(Enumerable.Range(26, 15), all.Select(p => p.Rank));
     }
+
+    private sealed class ProductWithTags
+    {
+        public ObjectId Id { get; set; }
+        public int Rank { get; set; }
+        public BsonArray Tags { get; set; } = new();
+    }
+
+    [Fact]
+    public async Task Select_LookupOnlyRunsAgainstLimitedPage()
+    {
+        var products = await Fixture.SeedAsync("agg_select_products", 40);
+
+        // A second collection keyed by Rank, looked up per product — proves the $lookup
+        // in Select() only executes against the already keyset-filtered/sorted/$limit-ed
+        // page, not the full 40-document collection.
+        var tags = Fixture.Database.GetCollection<BsonDocument>("agg_select_tags");
+        await tags.InsertManyAsync(Enumerable.Range(1, 40).Select(i =>
+            new BsonDocument { { "Rank", i }, { "Tag", $"tag-{i}" } }));
+
+        var lookupStage = new BsonDocument("$lookup", new BsonDocument
+        {
+            { "from", "agg_select_tags" },
+            { "localField", "Rank" },
+            { "foreignField", "Rank" },
+            { "as", "Tags" }
+        });
+
+        // A raw $project (not a LINQ expression) — the LINQ3 provider can't translate
+        // BsonDocument indexer chains like d["_id"].AsObjectId, so the final shape is
+        // produced via a raw pipeline stage and deserialized into ProductWithTags by the
+        // driver's BSON serializer instead.
+        var projectStage = new BsonDocument("$project", new BsonDocument
+        {
+            { "_id", 1 },
+            { "Rank", 1 },
+            { "Tags", 1 }
+        });
+
+        var page = await Seek
+            .CreateBuilder(products.Aggregate())
+            .WithRequest(new SeekRequest { PageSize = 10 })
+            .OrderBy(p => p.Rank)
+            .OrderBy(p => p.Id)
+            .Select(pipeline => pipeline
+                .AppendStage<BsonDocument>(lookupStage)
+                .AppendStage<ProductWithTags>(projectStage))
+            .ToSeekResultAsync();
+
+        Assert.Equal(10, page.Count);
+        Assert.All(page.Items, x => Assert.Single(x.Tags));
+    }
 }
