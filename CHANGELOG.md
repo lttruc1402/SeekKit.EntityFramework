@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-08-13
+
+All three packages (SeekKit.Core, SeekKit.EntityFramework, SeekKit.MongoDB) release
+together at 2.2.1 going forward — see **Fixed** below for why.
+
+### Fixed
+
+- **Critical:** installing `SeekKit.EntityFramework` or `SeekKit.MongoDB` 2.2.0 threw
+  `System.IO.FileNotFoundException: Could not load file or assembly 'SeekKit.Core,
+  Version=2.2.0.0, ...'` at runtime. Root cause: the release workflow builds/packs the
+  whole solution with a single `-p:Version=$TAG` MSBuild global property, which applies
+  to *every* project — including `SeekKit.Core`, which wasn't part of that release and
+  stayed declared at 2.1.0 in its own `.csproj`. That global override silently stamped
+  the compiled `SeekKit.Core.dll`'s `AssemblyVersion` as `2.2.0.0` (the SDK derives
+  `AssemblyVersion` from `Version` by default), while the actually-published
+  `SeekKit.Core` package (and its dependency line in the EF/Mongo `.nuspec`, which reads
+  `SeekKit.Core.csproj`'s own `<Version>` rather than the command-line override)
+  remained at `2.1.0.0` — a strong assembly-binding mismatch that only surfaces once a
+  consumer installs the package and runs it, not at CI build/test time. Fixed by:
+  - Pinning `<AssemblyVersion>` to a fixed value in `Directory.Build.props`, decoupled
+    from `<Version>`/`<PackageVersion>`, so a CI-wide version override (or any future
+    per-package version drift) can never desync the strong assembly reference again.
+    It now changes only for an actual breaking binary change, alongside a major bump.
+  - Moving `<Version>`/`<PackageVersion>` themselves into `Directory.Build.props` as a
+    single source shared by all three packable projects, so they always release
+    together in lockstep — the independent per-package versioning that let this drift
+    happen in the first place is gone.
+
 ## [2.2.0] - 2026-07-25
 
 `SeekKit.EntityFramework` and `SeekKit.MongoDB` release together at 2.2.0.

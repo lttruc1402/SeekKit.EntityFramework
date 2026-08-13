@@ -40,6 +40,35 @@
     <NoWarn>$(NoWarn);SYSLIB1037</NoWarn>
   </PropertyGroup>
 
+  <PropertyGroup Label="Assembly identity">
+    <!--
+      Pinned independently of Version/PackageVersion. The SDK otherwise derives
+      AssemblyVersion from Version, which breaks strong assembly binding the
+      moment two packages in this repo release at different version numbers:
+      the CI workflow passes -p:Version=X as a global MSBuild property across
+      the whole solution, so an *unreleased* project (e.g. SeekKit.Core sitting
+      at 2.1.0 while EntityFramework/MongoDB bump to 2.2.0) still gets its
+      AssemblyVersion stamped as 2.2.0.0 at compile time, while the actually
+      published SeekKit.Core package remains 2.1.0.0 — a strong-name mismatch
+      that throws FileNotFoundException for consumers at runtime. Bump this
+      only for an actual breaking binary change, matching a major version bump.
+    -->
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Package version" Condition="'$(IsPackable)' != 'false'">
+    <!--
+      Single source of truth for all three packable projects (SeekKit.Core,
+      SeekKit.EntityFramework, SeekKit.MongoDB). They release together at the
+      same number now — no more per-project <Version> drift between packages
+      that ProjectReference each other, which is what let the CI's global
+      -p:Version=X override desync SeekKit.Core's compiled AssemblyVersion from
+      its actually-published package version in the first place.
+    -->
+    <Version>2.2.1</Version>
+    <PackageVersion>2.2.1</PackageVersion>
+  </PropertyGroup>
+
   <PropertyGroup Label="Package metadata" Condition="'$(IsPackable)' != 'false'">
     <Authors>Le Thanh Truc</Authors>
     <Copyright>Copyright © 2026 Le Thanh Truc</Copyright>
