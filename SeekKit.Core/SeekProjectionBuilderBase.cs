@@ -50,14 +50,21 @@ public abstract class SeekProjectionBuilderBase<T, TResult>
         _resultAccessors = new Func<TResult, object?>[_sortColumns.Count];
         for (int i = 0; i < _sortColumns.Count; i++)
         {
-            if (_sortColumns[i].PropertyPath == SeekIdentitySortColumn.PropertyPath)
-                throw new InvalidOperationException(
-                    "Cannot use Select() with a sort column added via an identity selector " +
-                    "(x => x) — there's no property name to match against the projected " +
-                    $"{typeof(TResult).Name} shape. Pass the matching TResult property name " +
-                    "explicitly, e.g. OrderByDescending(x => x, resultPropertyName: \"Id\").");
+            var readPropertyPath = _sortColumns[i].PropertyPath;
 
-            _resultAccessors[i] = Helpers.ResultKeyAccessor.GetAccessor<TResult>(_sortColumns[i].PropertyPath);
+            if (readPropertyPath == SeekIdentitySortColumn.PropertyPath)
+            {
+                readPropertyPath = Helpers.IdentityResultPropertyDetector.TryDetect(transformer)
+                    ?? throw new InvalidOperationException(
+                        "Cannot use Select() with a sort column added via an identity selector " +
+                        $"(x => x) — couldn't auto-detect which property on the projected " +
+                        $"{typeof(TResult).Name} shape holds the equivalent value. This is detected " +
+                        "automatically for a single Join() whose result selector assigns the inner " +
+                        "key value directly to a member; for anything more complex, pass the " +
+                        "property name explicitly: OrderByDescending(x => x, resultPropertyName: \"Id\").");
+            }
+
+            _resultAccessors[i] = Helpers.ResultKeyAccessor.GetAccessor<TResult>(readPropertyPath);
         }
     }
 

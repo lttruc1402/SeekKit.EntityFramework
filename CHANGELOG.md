@@ -19,14 +19,22 @@ All three packages release together at 2.3.0.
 
 ### Added
 
-- **SeekKit.EntityFramework / SeekKit.MongoDB:** `OrderBy`/`OrderByDescending` gained
-  an optional `resultPropertyName` parameter. Required only when combining an
-  identity selector (`x => x`) with `Select()`: the projected `TResult` shape has
-  no property corresponding to an identity selector, so the matching property name
-  (e.g. `"Id"`) must be supplied explicitly so SeekKit can read the cursor value
-  back after projection. Attempting this combination without it now throws a
-  targeted `InvalidOperationException` naming the fix, instead of a confusing
-  "no public property '$self'" error.
+- **SeekKit.Core:** combining an identity sort selector (`x => x`) with
+  `Select()` (EF) / the queryable `Select()` origin (Mongo) now auto-detects
+  which `TResult` property holds the equivalent post-projection value, for two
+  common shapes: `ids.Join(entities, x => x, e => e.Id, (_, e) => new TResult
+  { Id = e.Id, ... })` and `ids.Select(id => new TResult { Id = id, ... })`.
+  Detection runs the transformer once against an empty in-memory queryable to
+  inspect the composed expression tree — no query executes, so this adds no
+  extra round trip.
+- **SeekKit.EntityFramework / SeekKit.MongoDB:** `OrderBy`/`OrderByDescending`
+  gained an optional `resultPropertyName` parameter as a fallback for when
+  auto-detection can't recognize the shape (nested joins, a renamed/computed
+  member, or Mongo's aggregate/find origins, which build pipelines outside
+  LINQ's expression trees and so can't be auto-detected at all). Attempting an
+  identity + `Select()` combination that's undetectable and has no
+  `resultPropertyName` now throws a targeted `InvalidOperationException` naming
+  the fix, instead of a confusing "no public property '$self'" error.
 
 ## [2.2.1] - 2026-08-13
 

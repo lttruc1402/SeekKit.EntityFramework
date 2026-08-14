@@ -182,6 +182,48 @@ public sealed class SeekMongoProjectionTests
         Assert.Contains("Id", ex.Message);
     }
 
+    // ── Identity sort selector (x => x) on a scalar sequence ────────────────────
+
+    [Fact]
+    public async Task Select_IdentityOrderBy_AutoDetectsJoinKey_ReturnsProjectedPage()
+    {
+        var service = CreateService();
+        var docs = SeedDocs(30);
+        var ids = docs.Select(d => d.Id).AsQueryable();
+
+        // No resultPropertyName — matches ids.Join(docs, x => x, d => d.Id,
+        // (_, d) => new DocSummaryDto { Id = d.Id, ... }).
+        var result = await service
+            .CreateBuilder(ids)
+            .WithRequest(new SeekRequest { PageSize = 10 })
+            .OrderBy(x => x)
+            .Select(q => q.Join(docs.AsQueryable(), id => id, d => d.Id,
+                (_, d) => new DocSummaryDto { Id = d.Id, CreatedAt = d.CreatedAt, DisplayName = d.Name }))
+            .ToSeekResultAsync();
+
+        Assert.Equal(10, result.Items.Count);
+        Assert.True(result.HasNext);
+    }
+
+    [Fact]
+    public void Select_IdentityOrderBy_WithoutResultPropertyName_UndetectableTransform_Throws()
+    {
+        var service = CreateService();
+        var docs = SeedDocs(5);
+        var ids = docs.Select(d => d.Id).AsQueryable();
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+        {
+            service
+                .CreateBuilder(ids)
+                .WithRequest(new SeekRequest())
+                .OrderBy(x => x)
+                .Select(q => q.Select(id => new { DisplayName = "n/a" })); // key dropped entirely
+        });
+
+        Assert.Contains("resultPropertyName", ex.Message);
+    }
+
     // ── Aggregate origin (CI-safe: construction/chaining/error paths only — no
     //    live MongoDB is available in this environment) ─────────────────────────
 
@@ -251,6 +293,37 @@ public sealed class SeekMongoProjectionTests
         });
 
         Assert.Contains("Id", ex.Message);
+    }
+
+    [Fact]
+    public void AggregateSelect_IdentityOrderBy_WithoutResultPropertyName_Throws()
+    {
+        var idPipeline = Pipeline().Project(d => d.Id);
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+        {
+            CreateService()
+                .CreateBuilder(idPipeline)
+                .WithRequest(new SeekRequest())
+                .OrderBy(x => x)
+                .Select(p => p.Project(id => new DocSummaryDto { Id = id }));
+        });
+
+        Assert.Contains("resultPropertyName", ex.Message);
+    }
+
+    [Fact]
+    public void AggregateSelect_IdentityOrderBy_WithResultPropertyName_IsChainable()
+    {
+        var idPipeline = Pipeline().Project(d => d.Id);
+
+        var builder = CreateService()
+            .CreateBuilder(idPipeline)
+            .WithRequest(new SeekRequest())
+            .OrderBy(x => x, resultPropertyName: nameof(DocSummaryDto.Id))
+            .Select(p => p.Project(id => new DocSummaryDto { Id = id }));
+
+        Assert.NotNull(builder);
     }
 
     // ── Find origin (CI-safe: construction/chaining/error paths only) ───────────

@@ -47,7 +47,16 @@ internal sealed class SeekAggregateProjectionBuilder<T, TResult> : ISeekMongoBui
         _resultAccessors = new Func<TResult, object?>[_sortColumns.Count];
         for (int i = 0; i < _sortColumns.Count; i++)
         {
-            _resultAccessors[i] = ResultKeyAccessor.GetAccessor<TResult>(_sortColumns[i].PropertyPath);
+            var readPropertyPath = _sortColumns[i].PropertyPath;
+
+            if (readPropertyPath == SeekIdentitySortColumn.PropertyPath)
+                throw new InvalidOperationException(
+                    "Cannot use Select() with a sort column added via an identity selector " +
+                    $"(x => x) — there's no property name to match against the projected " +
+                    $"{typeof(TResult).Name} shape. Pass the matching property name explicitly: " +
+                    "OrderByDescending(x => x, resultPropertyName: \"Id\").");
+
+            _resultAccessors[i] = ResultKeyAccessor.GetAccessor<TResult>(readPropertyPath);
         }
     }
 

@@ -230,11 +230,16 @@ wrong (e.g. project `Id` as `long` when it's `int` on the entity) and it isn't
 caught for you, so keep the types matching too.
 
 **Sorting a scalar sequence by itself:** `OrderBy(x => x)` (e.g. on an
-`IQueryable<int>` of pre-filtered ids) has no property name to derive, so
-combining it with `Select()` requires the matching `TResult` property name
-explicitly: `OrderByDescending(x => x, resultPropertyName: "Id")`. Without it,
-`Select()` throws immediately with an actionable message instead of a
-projection or applying at all.
+`IQueryable<int>` of pre-filtered ids) has no property name to derive. Combined
+with `Select()`, SeekKit auto-detects the matching `TResult` property for two
+common shapes — `ids.Join(entities, x => x, e => e.Id, (_, e) => new TResult
+{ Id = e.Id, ... })` and `ids.Select(id => new TResult { Id = id, ... })` — by
+inspecting the transformer's composed expression tree (no query runs; it's
+invoked once against an empty in-memory queryable). Anything more complex
+(nested joins, a renamed/computed member) can't be auto-detected, so pass the
+name explicitly: `OrderByDescending(x => x, resultPropertyName: "Id")`.
+Without either, `Select()` throws immediately with an actionable message
+instead of running a broken projection.
 
 | `Select` vs `Map` | Runs | Best for |
 |---|---|---|
@@ -618,9 +623,11 @@ Same rule as EF: the projected type must expose public properties with the same
 names/types as the sort columns (`Id`, `CreatedAt` above), and `Select` returns
 `ISeekMongoBuilder<T, TResult>` (`ToSeekResultAsync()` → `SeekResult<TResult>`)
 regardless of which origin produced it. Sorting a scalar sequence by itself
-(`OrderBy(x => x)`) combined with `Select()` needs the matching `TResult`
-property name passed explicitly — `OrderByDescending(x => x, resultPropertyName:
-"Id")` — since an identity selector has no property name to derive. See
+(`OrderBy(x => x)`) combined with `Select()` is auto-detected for the
+**queryable origin** the same way as EF (see above) — the aggregate/find
+origins build pipelines outside LINQ's expression trees, so they can't be
+auto-detected and always need the property name passed explicitly:
+`OrderByDescending(x => x, resultPropertyName: "Id")`. See
 [`examples/SeekKit.Example.MongoApi`](examples/SeekKit.Example.MongoApi)'s
 `GET /products/projected` for the full, runnable `$lookup` version.
 
