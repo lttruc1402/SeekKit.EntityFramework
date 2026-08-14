@@ -90,6 +90,18 @@ public interface ISortColumn<T>
     object? GetValue(T entity);
 }
 
+/// <summary>
+/// Sentinel <see cref="ISortColumn{T}.PropertyPath"/> assigned to an identity sort
+/// selector (<c>x =&gt; x</c>) — sorting a scalar sequence (e.g. <c>IQueryable&lt;int&gt;</c>)
+/// by the element itself, where there is no property to name. Not a real property name
+/// (C# identifiers can't contain <c>$</c>), so it can never accidentally match a
+/// <c>TResult</c> property in <c>Select()</c>'s projected-cursor lookup.
+/// </summary>
+internal static class SeekIdentitySortColumn
+{
+    internal const string PropertyPath = "$self";
+}
+
 internal sealed class SortColumn<T, TKey> : ISortColumn<T>
 {
     private readonly Expression<Func<T, TKey>> _keySelector;

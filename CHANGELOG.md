@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-08-14
+
+All three packages release together at 2.3.0.
+
+### Fixed
+
+- **SeekKit.Core:** `OrderBy`/`OrderByDescending` threw `System.ArgumentException:
+  Expression 'x' must be a property access` when sorting a scalar sequence (e.g.
+  `IQueryable<int>`) by the element itself (`x => x`) instead of a property —
+  common when pre-filtering to a set of ids before joining. Identity selectors are
+  now supported for the plain (non-`Select()`) pagination path.
+
+### Added
+
+- **SeekKit.EntityFramework / SeekKit.MongoDB:** `OrderBy`/`OrderByDescending` gained
+  an optional `resultPropertyName` parameter. Required only when combining an
+  identity selector (`x => x`) with `Select()`: the projected `TResult` shape has
+  no property corresponding to an identity selector, so the matching property name
+  (e.g. `"Id"`) must be supplied explicitly so SeekKit can read the cursor value
+  back after projection. Attempting this combination without it now throws a
+  targeted `InvalidOperationException` naming the fix, instead of a confusing
+  "no public property '$self'" error.
+
 ## [2.2.1] - 2026-08-13
 
 All three packages (SeekKit.Core, SeekKit.EntityFramework, SeekKit.MongoDB) release

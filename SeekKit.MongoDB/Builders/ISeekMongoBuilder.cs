@@ -16,13 +16,29 @@ public interface ISeekMongoBuilder<T>
     /// Adds an ascending sort column to the keyset. The order in which columns are added
     /// determines sort priority. Always add a unique column (e.g. <c>Id</c>) last.
     /// </summary>
-    ISeekMongoBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector);
+    /// <param name="keySelector">Expression selecting the column.</param>
+    /// <param name="resultPropertyName">
+    /// Required only when <paramref name="keySelector"/> is an identity selector
+    /// (<c>x =&gt; x</c>, e.g. sorting an <c>IQueryable&lt;int&gt;</c> by itself) <b>and</b>
+    /// the query is later projected via <c>Select()</c> — names the property on the
+    /// projected result shape that holds the equivalent value, since there's no property
+    /// name to derive from an identity selector. Ignored otherwise.
+    /// </param>
+    ISeekMongoBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName = null);
 
     /// <summary>
     /// Adds a descending sort column to the keyset. The order in which columns are added
     /// determines sort priority. Always add a unique column (e.g. <c>Id</c>) last.
     /// </summary>
-    ISeekMongoBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector);
+    /// <param name="keySelector">Expression selecting the column.</param>
+    /// <param name="resultPropertyName">
+    /// Required only when <paramref name="keySelector"/> is an identity selector
+    /// (<c>x =&gt; x</c>, e.g. sorting an <c>IQueryable&lt;int&gt;</c> by itself) <b>and</b>
+    /// the query is later projected via <c>Select()</c> — names the property on the
+    /// projected result shape that holds the equivalent value, since there's no property
+    /// name to derive from an identity selector. Ignored otherwise.
+    /// </param>
+    ISeekMongoBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName = null);
 
     /// <summary>
     /// Executes the paginated query and returns a <see cref="SeekResult{T}"/>.
@@ -50,10 +66,10 @@ public interface ISeekMongoQueryableBuilder<T> : ISeekMongoBuilder<T>
     ISeekMongoQueryableBuilder<T> WithStrategy(ISeekFilterStrategy strategy);
 
     /// <summary>Adds an ascending sort column to the keyset.</summary>
-    new ISeekMongoQueryableBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector);
+    new ISeekMongoQueryableBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName = null);
 
     /// <summary>Adds a descending sort column to the keyset.</summary>
-    new ISeekMongoQueryableBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector);
+    new ISeekMongoQueryableBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName = null);
 
     /// <summary>
     /// Defers a projection until after ordering, keyset filtering, and the look-ahead
@@ -80,10 +96,10 @@ public interface ISeekMongoAggregateBuilder<T> : ISeekMongoBuilder<T>
     new ISeekMongoAggregateBuilder<T> WithRequest(SeekRequest request);
 
     /// <summary>Adds an ascending sort column to the keyset.</summary>
-    new ISeekMongoAggregateBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector);
+    new ISeekMongoAggregateBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName = null);
 
     /// <summary>Adds a descending sort column to the keyset.</summary>
-    new ISeekMongoAggregateBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector);
+    new ISeekMongoAggregateBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName = null);
 
     /// <summary>
     /// Defers a projection until after the keyset <c>$match</c>, <c>$sort</c>, and
@@ -109,10 +125,10 @@ public interface ISeekMongoFindBuilder<T> : ISeekMongoBuilder<T>
     new ISeekMongoFindBuilder<T> WithRequest(SeekRequest request);
 
     /// <summary>Adds an ascending sort column to the keyset.</summary>
-    new ISeekMongoFindBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector);
+    new ISeekMongoFindBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName = null);
 
     /// <summary>Adds a descending sort column to the keyset.</summary>
-    new ISeekMongoFindBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector);
+    new ISeekMongoFindBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName = null);
 
     /// <summary>
     /// Defers a projection until after the keyset filter, sort, and limit have been

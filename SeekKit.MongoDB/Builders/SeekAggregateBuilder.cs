@@ -35,21 +35,21 @@ internal sealed class SeekAggregateBuilder<T> : SeekBuilderCore<T>, ISeekMongoAg
 
     ISeekMongoBuilder<T> ISeekMongoBuilder<T>.WithRequest(SeekRequest request) => WithRequest(request);
 
-    public ISeekMongoAggregateBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector)
+    public ISeekMongoAggregateBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName = null)
     {
-        AddSortColumn(keySelector, isDescending: false);
+        AddSortColumn(keySelector, isDescending: false, resultPropertyName);
         return this;
     }
 
-    ISeekMongoBuilder<T> ISeekMongoBuilder<T>.OrderBy<TKey>(Expression<Func<T, TKey>> keySelector) => OrderBy(keySelector);
+    ISeekMongoBuilder<T> ISeekMongoBuilder<T>.OrderBy<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName) => OrderBy(keySelector, resultPropertyName);
 
-    public ISeekMongoAggregateBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector)
+    public ISeekMongoAggregateBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName = null)
     {
-        AddSortColumn(keySelector, isDescending: true);
+        AddSortColumn(keySelector, isDescending: true, resultPropertyName);
         return this;
     }
 
-    ISeekMongoBuilder<T> ISeekMongoBuilder<T>.OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector) => OrderByDescending(keySelector);
+    ISeekMongoBuilder<T> ISeekMongoBuilder<T>.OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName) => OrderByDescending(keySelector, resultPropertyName);
 
     public ISeekMongoBuilder<T, TResult> Select<TResult>(Func<IAggregateFluent<T>, IAggregateFluent<TResult>> transformer)
     {

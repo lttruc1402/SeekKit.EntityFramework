@@ -50,11 +50,24 @@ public abstract class SeekBuilderCore<T>
         _request = request ?? throw new ArgumentNullException(nameof(request));
     }
 
-    /// <summary>Adds a sort column. Column order determines sort priority.</summary>
-    protected void AddSortColumn<TKey>(Expression<Func<T, TKey>> keySelector, bool isDescending)
+    /// <summary>
+    /// Adds a sort column. Column order determines sort priority.
+    /// </summary>
+    /// <param name="keySelector">Expression selecting the column.</param>
+    /// <param name="isDescending"><see langword="true"/> for descending, <see langword="false"/> for ascending.</param>
+    /// <param name="resultPropertyName">
+    /// Overrides the cursor's key name for this column instead of deriving it from
+    /// <paramref name="keySelector"/>. Required when <paramref name="keySelector"/> is an
+    /// identity selector (<c>x =&gt; x</c>, e.g. sorting an <c>IQueryable&lt;int&gt;</c> by
+    /// itself) and the query is later projected via <c>Select()</c> — there's no property
+    /// name to derive, so the resulting <c>TResult</c> shape's matching property name (e.g.
+    /// <c>"Id"</c>) must be supplied explicitly so SeekKit can read the cursor value back
+    /// after projection.
+    /// </param>
+    protected void AddSortColumn<TKey>(Expression<Func<T, TKey>> keySelector, bool isDescending, string? resultPropertyName = null)
     {
         if (keySelector is null) throw new ArgumentNullException(nameof(keySelector));
-        var propertyPath = GetPropertyPath(keySelector);
+        var propertyPath = resultPropertyName ?? GetPropertyPath(keySelector);
         _sortColumns.Add(new SortColumn<T, TKey>(propertyPath, keySelector, isDescending));
     }
 
@@ -106,6 +119,12 @@ public abstract class SeekBuilderCore<T>
 
             case UnaryExpression { Operand: MemberExpression memberExpr2 }:
                 return GetPropertyPathInternal(memberExpr2);
+
+            // Identity: x => x — sorting a scalar sequence (e.g. IQueryable<int>)
+            // by the element itself, with no property to access.
+            case ParameterExpression:
+            case UnaryExpression { Operand: ParameterExpression }:
+                return SeekIdentitySortColumn.PropertyPath;
 
             default:
                 throw new ArgumentException($"Expression '{expression}' must be a property access");

@@ -65,8 +65,8 @@
       -p:Version=X override desync SeekKit.Core's compiled AssemblyVersion from
       its actually-published package version in the first place.
     -->
-    <Version>2.2.1</Version>
-    <PackageVersion>2.2.1</PackageVersion>
+    <Version>2.3.0</Version>
+    <PackageVersion>2.3.0</PackageVersion>
   </PropertyGroup>
 
   <PropertyGroup Label="Package metadata" Condition="'$(IsPackable)' != 'false'">

@@ -50,6 +50,13 @@ public abstract class SeekProjectionBuilderBase<T, TResult>
         _resultAccessors = new Func<TResult, object?>[_sortColumns.Count];
         for (int i = 0; i < _sortColumns.Count; i++)
         {
+            if (_sortColumns[i].PropertyPath == SeekIdentitySortColumn.PropertyPath)
+                throw new InvalidOperationException(
+                    "Cannot use Select() with a sort column added via an identity selector " +
+                    "(x => x) — there's no property name to match against the projected " +
+                    $"{typeof(TResult).Name} shape. Pass the matching TResult property name " +
+                    "explicitly, e.g. OrderByDescending(x => x, resultPropertyName: \"Id\").");
+
             _resultAccessors[i] = Helpers.ResultKeyAccessor.GetAccessor<TResult>(_sortColumns[i].PropertyPath);
         }
     }

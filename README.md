@@ -229,6 +229,13 @@ projected shape by matching those names. Get a name wrong and `Select()` throws
 wrong (e.g. project `Id` as `long` when it's `int` on the entity) and it isn't
 caught for you, so keep the types matching too.
 
+**Sorting a scalar sequence by itself:** `OrderBy(x => x)` (e.g. on an
+`IQueryable<int>` of pre-filtered ids) has no property name to derive, so
+combining it with `Select()` requires the matching `TResult` property name
+explicitly: `OrderByDescending(x => x, resultPropertyName: "Id")`. Without it,
+`Select()` throws immediately with an actionable message instead of a
+projection or applying at all.
+
 | `Select` vs `Map` | Runs | Best for |
 |---|---|---|
 | `Select<TResult>(transformer)` | Inside the query, before materialization | Joins/projections you want pushed to the database |
@@ -610,7 +617,10 @@ SeekResult<ProductDto> page = await seek
 Same rule as EF: the projected type must expose public properties with the same
 names/types as the sort columns (`Id`, `CreatedAt` above), and `Select` returns
 `ISeekMongoBuilder<T, TResult>` (`ToSeekResultAsync()` → `SeekResult<TResult>`)
-regardless of which origin produced it. See
+regardless of which origin produced it. Sorting a scalar sequence by itself
+(`OrderBy(x => x)`) combined with `Select()` needs the matching `TResult`
+property name passed explicitly — `OrderByDescending(x => x, resultPropertyName:
+"Id")` — since an identity selector has no property name to derive. See
 [`examples/SeekKit.Example.MongoApi`](examples/SeekKit.Example.MongoApi)'s
 `GET /products/projected` for the full, runnable `$lookup` version.
 

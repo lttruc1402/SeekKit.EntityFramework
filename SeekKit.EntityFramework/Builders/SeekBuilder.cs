@@ -24,15 +24,15 @@ internal sealed class SeekBuilder<T> : SeekBuilderBase<T>, ISeekBuilder<T>
     public ValueTask<SeekResult<T>> ToSeekResultAsync(CancellationToken cancellationToken = default)
         => ExecuteAsync(cancellationToken);
 
-    public ISeekBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector)
+    public ISeekBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName = null)
     {
-        AddSortColumn(keySelector, isDescending: false);
+        AddSortColumn(keySelector, isDescending: false, resultPropertyName);
         return this;
     }
 
-    public ISeekBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector)
+    public ISeekBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName = null)
     {
-        AddSortColumn(keySelector, isDescending: true);
+        AddSortColumn(keySelector, isDescending: true, resultPropertyName);
         return this;
     }
 

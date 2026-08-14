@@ -45,7 +45,14 @@ public interface ISeekBuilder<T>
     /// </summary>
     /// <typeparam name="TKey">The column's value type.</typeparam>
     /// <param name="keySelector">Expression selecting the column.</param>
-    ISeekBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector);
+    /// <param name="resultPropertyName">
+    /// Required only when <paramref name="keySelector"/> is an identity selector
+    /// (<c>x =&gt; x</c>, e.g. sorting an <c>IQueryable&lt;int&gt;</c> by itself) <b>and</b>
+    /// the query is later projected via <see cref="Select{TResult}"/> — names the property
+    /// on the projected <c>TResult</c> shape that holds the equivalent value, since there's
+    /// no property name to derive from an identity selector. Ignored otherwise.
+    /// </param>
+    ISeekBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName = null);
 
     /// <summary>
     /// Adds a descending sort column to the keyset. The order in which columns are added
@@ -53,7 +60,14 @@ public interface ISeekBuilder<T>
     /// </summary>
     /// <typeparam name="TKey">The column's value type.</typeparam>
     /// <param name="keySelector">Expression selecting the column.</param>
-    ISeekBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector);
+    /// <param name="resultPropertyName">
+    /// Required only when <paramref name="keySelector"/> is an identity selector
+    /// (<c>x =&gt; x</c>, e.g. sorting an <c>IQueryable&lt;int&gt;</c> by itself) <b>and</b>
+    /// the query is later projected via <see cref="Select{TResult}"/> — names the property
+    /// on the projected <c>TResult</c> shape that holds the equivalent value, since there's
+    /// no property name to derive from an identity selector. Ignored otherwise.
+    /// </param>
+    ISeekBuilder<T> OrderByDescending<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName = null);
 
     /// <summary>
     /// Defers a join/projection until after ordering, keyset filtering, and the
