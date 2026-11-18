@@ -17,9 +17,11 @@ internal sealed class SeekMongoProjectionBuilder<T, TResult>
         ISeekSerializer serializer,
         ISeekValueConverter valueConverter,
         SeekRequest? request,
-        SeekOptionsBase options)
+        SeekOptionsBase options,
+        bool includeTotalCount)
         : base(query, sortColumns, filterStrategy, transformer, serializer, valueConverter, request, options)
     {
+        IncludeTotalCount = includeTotalCount;
     }
 
     protected override Task<List<TResult>> MaterializeAsync(IQueryable<TResult> query, CancellationToken cancellationToken)
@@ -30,6 +32,15 @@ internal sealed class SeekMongoProjectionBuilder<T, TResult>
         return Task.FromResult(query.ToList());
     }
 
+    protected override Task<long> LongCountAsync(IQueryable<T> query, CancellationToken cancellationToken)
+        => MongoCount.CountAsync(query, cancellationToken);
+
     public ValueTask<SeekResult<TResult>> ToSeekResultAsync(CancellationToken cancellationToken = default)
         => ExecuteAsync(cancellationToken);
+
+    public IAsyncEnumerable<SeekResult<TResult>> ToPagesAsync(CancellationToken cancellationToken = default)
+        => ExecutePagesAsync(cancellationToken);
+
+    public IAsyncEnumerable<TResult> ToItemsAsync(CancellationToken cancellationToken = default)
+        => ExecuteItemsAsync(cancellationToken);
 }

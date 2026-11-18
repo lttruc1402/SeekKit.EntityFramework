@@ -87,8 +87,10 @@ await seek.CreateBuilder(products.Aggregate())
     .ToSeekResultAsync();
 ```
 
-`TResult` must expose public properties with the same names/types as the sort
-columns so SeekKit can read cursor values from the projected shape. `WithStrategy`
+For the aggregate and find origins `TResult` must expose public properties with
+the same names/types as the sort columns so SeekKit can read cursor values from
+the projected shape (the queryable origin can also trace renamed members
+through the LINQ transformer). `WithStrategy`
 exists only on the queryable builder — Mongo has no aggregate/find-specific
 `ISeekFilterStrategy` to switch to.
 
@@ -98,11 +100,15 @@ exists only on the queryable builder — Mongo has no aggregate/find-specific
 - Bidirectional navigation with opaque tokens
 - Paginate collections, LINQ queryables, aggregation pipelines, and find queries
 - Push-down projection via `Select<TResult>` on every builder origin
+- Client-driven sorting (`?sort=price:desc,name:asc`) against a whitelist — `SeekSortMap<T>` + `ApplySort`
+- Nullable and string sort keys; computed sort keys on the queryable origin
+- Opt-in total count (`WithTotalCount()`) and `IAsyncEnumerable` streaming (`ToPagesAsync` / `ToItemsAsync`)
+- Tokens bound to their sort, with optional expiry and strict validation (`SeekTokenException`)
 - `ObjectId` supported out of the box as sort/tie-breaker column
 - Multi-column sorting with mixed directions
 - Optional HMAC-SHA256 token signing (`config.UseHmacSigning(key)`)
 - DTO projection via `result.Map(...)` preserving all metadata (in-memory, post-fetch)
-- Targets .NET 8 / 9 / 10 and .NET Standard 2.1
+- Targets .NET 8 / 9 / 10 / 11 and .NET Standard 2.1
 
 ## Links
 

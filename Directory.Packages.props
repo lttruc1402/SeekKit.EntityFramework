@@ -21,63 +21,98 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
-    <PackageVersion Include="Microsoft.EntityFrameworkCore"            Version="8.0.16" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.16" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore"            Version="8.0.34" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.34" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
     <PackageVersion Include="Microsoft.Extensions.Options"             Version="8.0.2" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
-    <PackageVersion Include="Microsoft.EntityFrameworkCore"            Version="9.0.6"  />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.6"  />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.6" />
-    <PackageVersion Include="Microsoft.Extensions.Options"             Version="9.0.6" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore"            Version="9.0.23"  />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.23"  />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.23" />
+    <PackageVersion Include="Microsoft.Extensions.Options"             Version="9.0.23" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
-    <PackageVersion Include="Microsoft.EntityFrameworkCore"            Version="10.0.6" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.Extensions.Options"             Version="10.0.6" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore"            Version="10.0.15" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Options"             Version="10.0.15" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net11.0'">
+    <PackageVersion Include="Microsoft.EntityFrameworkCore"            Version="11.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="11.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="11.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Options"             Version="11.0.0" />
   </ItemGroup>
 
   <!-- ── SeekKit.MongoDB ───────────────────────────────────────────────────── -->
 
   <ItemGroup>
-    <PackageVersion Include="MongoDB.Driver" Version="3.10.0" />
+    <PackageVersion Include="MongoDB.Driver" Version="3.14.0" />
   </ItemGroup>
 
   <!-- ── Polyfill packages — chỉ dùng cho netstandard2.1 ──────────────────── -->
 
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
-    <!-- System.Text.Json 6.0.7: NU1903 vulnerability suppressed in Directory.Build.props
-         (chỉ dùng để có JsonSerializerContext + source generator; runtime load version của host) -->
-    <PackageVersion Include="System.Text.Json"             Version="6.0.7" />
-    <PackageVersion Include="System.Collections.Immutable" Version="6.0.0" />
+    <!-- System.Text.Json 6.x: chỉ dùng để có JsonSerializerContext + source generator;
+         runtime load version của host. 6.0.11 là bản vá cuối của dòng 6.x (không còn NU1903). -->
+    <PackageVersion Include="System.Text.Json"             Version="6.0.11" />
+    <PackageVersion Include="System.Collections.Immutable" Version="6.0.1" />
   </ItemGroup>
 
-  <!-- ── SeekKit.Example.Api ───────────────────────────────────────────────── -->
+  <!-- ── Examples + tests — theo sát runtime của từng TFM ──────────────────────
+       Tests chạy trên cả net10.0 và net11.0 nên EF provider / DI phải khớp major
+       với EF Core mà SeekKit.EntityFramework dùng cho TFM đó. Examples chỉ target
+       net11.0. -->
 
-  <ItemGroup>
-    <PackageVersion Include="Microsoft.AspNetCore.OpenApi"           Version="10.0.4" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite"    Version="10.0.6" />
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite"     Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.15" />
   </ItemGroup>
 
-  <!-- ── SeekKit.EntityFramework.Tests ─────────────────────────────────────── -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net11.0'">
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi"             Version="11.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer"  Version="11.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite"     Version="11.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="11.0.0" />
+  </ItemGroup>
+
+  <!-- ── Test tooling ──────────────────────────────────────────────────────── -->
 
   <ItemGroup>
-    <PackageVersion Include="Microsoft.NET.Test.Sdk"    Version="17.13.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk"    Version="18.12.0" />
     <PackageVersion Include="xunit"                     Version="2.9.3"   />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.0"   />
-    <PackageVersion Include="coverlet.collector"        Version="6.0.4"   />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.6" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1"   />
+    <PackageVersion Include="coverlet.collector"        Version="10.1.1"   />
   </ItemGroup>
 
   <!-- ── SeekKit.MongoDB.IntegrationTests ──────────────────────────────────── -->
 
   <ItemGroup>
-    <PackageVersion Include="Testcontainers.MongoDb" Version="4.13.0" />
+    <PackageVersion Include="Testcontainers.MongoDb" Version="4.17.0" />
+  </ItemGroup>
+
+  <!-- ── SeekKit.EntityFramework.{PostgreSql,MySql,Oracle}.IntegrationTests ────
+       Chỉ target net10.0: các provider PostgreSQL / MySQL / Oracle cho EF Core 11
+       chưa có bản stable. Khi có thì thêm net11.0 vào project + group dưới. -->
+
+  <ItemGroup>
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.17.0" />
+    <PackageVersion Include="Testcontainers.MySql"      Version="4.17.0" />
+    <PackageVersion Include="Testcontainers.Oracle"     Version="4.17.0" />
+    <PackageVersion Include="Testcontainers.MsSql"      Version="4.17.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.15" />
+    <PackageVersion Include="MySql.EntityFrameworkCore"             Version="10.0.12" />
+    <PackageVersion Include="Oracle.EntityFrameworkCore"            Version="10.23.26400" />
+    <!-- Oracle.ManagedDataAccess kéo theo bản 8.0.1 có lỗ hổng đã biết (NU1902/NU1903) → ghim bản vá. -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs"     Version="10.0.15" />
   </ItemGroup>
 
 </Project>

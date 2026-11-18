@@ -19,8 +19,10 @@ internal sealed class UnionAllSeekStrategy: ISeekFilterStrategy, IPageSizeAware
         {
             var branches = BuildBranchQueries(query, parameter, orderFields, seekData);
 
+            // No branch at all means no row can lie beyond the boundary (it is the very
+            // last row of the scan — every sort value NULL, with nulls sorted last).
             if (branches.Count == 0)
-                return query;
+                return query.Where(_ => false);
 
             if (branches.Count == 1)
                 return branches[0];
@@ -32,6 +34,11 @@ internal sealed class UnionAllSeekStrategy: ISeekFilterStrategy, IPageSizeAware
             }
 
             return unionQuery.ApplyOrdering(orderFields, seekData.Direction).Take(_pageSize);
+        }
+        catch (SeekTokenException)
+        {
+            // A bad token is the caller's problem, not a strategy failure — no fallback can fix it.
+            throw;
         }
         catch (Exception ex)
         {
@@ -60,40 +67,25 @@ internal sealed class UnionAllSeekStrategy: ISeekFilterStrategy, IPageSizeAware
             SeekData SeekData)
     {
         var branches = new List<IQueryable<T>>(orderFields.Count);
-        var SeekValueHolders = orderFields.ToSeekValueHolders(SeekData.Values, _valueConverter);
         var direction = SeekData.Direction;
-        // Build each branch
-        for (int i = 0; i < orderFields.Count; i++)
+
+        // One branch per index range: ties on the preceding columns, strictly after the
+        // boundary on the current one (a nullable column adds a separate IS NULL branch).
+        foreach (var branch in KeysetPredicateBuilder.BuildBranchPredicates(parameter, orderFields, SeekData, _valueConverter))
         {
-            Expression? predicate = null;
-
-            // Equal conditions for previous fields
-            for (int j = 0; j < i; j++)
-            {
-                var equalCondition = orderFields[j].CreateCondition(
-                    parameter,
-                    direction,
-                    isComparison: false,
-                   SeekValueHolders);
-
-                predicate = predicate == null
-                    ? equalCondition
-                    : Expression.AndAlso(predicate, equalCondition);
-            }
-
-            // Comparison condition for current field
-            var compareCondition = orderFields[i].CreateCondition(
-                parameter,
-                direction,
-                isComparison: true, SeekValueHolders);
-
-            predicate = predicate == null
-                ? compareCondition
-                : Expression.AndAlso(predicate, compareCondition);
-
             // Build branch query
-            var lambda = Expression.Lambda<Func<T, bool>>(predicate, parameter);
-            var branchQuery = baseQuery.Where(lambda).ApplyOrdering(orderFields, direction).Take(_pageSize);
+            var lambda = Expression.Lambda<Func<T, bool>>(branch.Predicate, parameter);
+
+            // Inside a branch the columns it pins to one value are constant, so the branch
+            // is ordered by the remaining ones only. This is not cosmetic: MySQL does not
+            // see through `WHERE a IS NULL ORDER BY a, b` and sorts every matching row
+            // (measured: 780 ms instead of 3 ms), while `ORDER BY b` reads the index in
+            // order. The outer query still orders by all columns.
+            var branchOrder = branch.PinnedColumns > 0 && branch.PinnedColumns < orderFields.Count
+                ? orderFields.Skip(branch.PinnedColumns).ToArray()
+                : orderFields;
+
+            var branchQuery = baseQuery.Where(lambda).ApplyOrdering(branchOrder, direction).Take(_pageSize);
             branches.Add(branchQuery);
         }
 

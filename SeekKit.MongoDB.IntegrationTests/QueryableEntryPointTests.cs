@@ -136,17 +136,29 @@ public sealed class QueryableEntryPointTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Concat_IsKnownToFail_DocumentedLimitation()
+    public async Task Concat_TwoCollections_PaginatesAcrossBoth()
     {
-        // Documents why the library uses .Union() not .Concat(): the LINQ provider
-        // throws on Concat + OrderBy + Take. This test locks that expectation so a
-        // future driver change that fixes it is noticed.
-        var a = await Fixture.SeedAsync("q_concat_a", 5);
-        var b = await Fixture.SeedAsync("q_concat_b", 5);
+        // Concat + OrderBy + Take used to throw in the LINQ provider (this test once
+        // locked that failure in). The driver version SeekKit.MongoDB now depends on
+        // translates it, so it must page across both collections just like Union.
+        var a = await Fixture.SeedAsync("q_concat_a", 0);
+        var b = await Fixture.SeedAsync("q_concat_b", 0);
+        var baseTime = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var da = new List<Product>(); var dbb = new List<Product>();
+        for (int i = 1; i <= 40; i++)
+        {
+            var p = new Product { Id = ObjectId.GenerateNewId(), Name = $"P{i}", Rank = i, Price = i, CreatedAt = baseTime.AddMinutes(i), IsActive = true };
+            (i % 2 == 1 ? da : dbb).Add(p);
+        }
+        await a.InsertManyAsync(da);
+        await b.InsertManyAsync(dbb);
 
-        await Assert.ThrowsAnyAsync<Exception>(() => Seek.SeekAsync(
+        var all = await TraverseForwardAsync(token => Seek.SeekAsync(
             a.AsQueryable().Concat(b.AsQueryable()),
-            new SeekRequest { PageSize = 4 },
+            new SeekRequest { Token = token, PageSize = 8 },
             bd => bd.OrderBy(p => p.Rank).OrderBy(p => p.Id)).AsTask());
+
+        Assert.Equal(40, all.Count);
+        Assert.Equal(Enumerable.Range(1, 40), all.Select(p => p.Rank));
     }
 }

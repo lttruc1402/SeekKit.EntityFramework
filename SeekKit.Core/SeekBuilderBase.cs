@@ -58,6 +58,18 @@ public abstract class SeekBuilderBase<T> : SeekBuilderCore<T>
     /// </summary>
     protected abstract Task<List<T>> MaterializeAsync(IQueryable<T> query, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Counts <paramref name="query"/> using the provider's async API. The default runs
+    /// the count synchronously, which is all a plain in-memory queryable can do;
+    /// provider builders override it.
+    /// </summary>
+    protected virtual Task<long> LongCountAsync(IQueryable<T> query, CancellationToken cancellationToken)
+        => Task.FromResult(query.LongCount());
+
+    /// <inheritdoc />
+    protected sealed override Task<long> CountAsync(CancellationToken cancellationToken)
+        => LongCountAsync(_query, cancellationToken);
+
     protected sealed override Task<List<T>> FetchAsync(
         SeekData? seekData,
         SeekDirection direction,

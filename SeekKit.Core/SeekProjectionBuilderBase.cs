@@ -47,25 +47,85 @@ public abstract class SeekProjectionBuilderBase<T, TResult>
         _options        = options ?? throw new ArgumentNullException(nameof(options));
         _request        = request;
 
-        _resultAccessors = new Func<TResult, object?>[_sortColumns.Count];
-        for (int i = 0; i < _sortColumns.Count; i++)
-        {
-            var readPropertyPath = _sortColumns[i].PropertyPath;
+        _resultAccessors = ResolveResultAccessors(sortColumns, transformer);
+    }
 
-            if (readPropertyPath == SeekIdentitySortColumn.PropertyPath)
+    /// <summary>
+    /// Decides, per sort column, where on <typeparamref name="TResult"/> the cursor value is
+    /// read from after projection:
+    /// <list type="number">
+    ///   <item><description>
+    ///   a public property with the column's name (the sort property's own name, or the
+    ///   explicit <c>resultPropertyName</c>) — the cheap, common case;
+    ///   </description></item>
+    ///   <item><description>
+    ///   otherwise the property the value is traced to through the transformer's joins and
+    ///   projections (<see cref="Helpers.SortKeyResultPathTracer{T, TResult}"/>) — this covers
+    ///   identity selectors (<c>x =&gt; x</c>) and members renamed by the projection.
+    ///   </description></item>
+    /// </list>
+    /// </summary>
+    private static Func<TResult, object?>[] ResolveResultAccessors(
+        IReadOnlyList<ISortColumn<T>> sortColumns,
+        Func<IQueryable<T>, IQueryable<TResult>> transformer)
+    {
+        var accessors = new Func<TResult, object?>[sortColumns.Count];
+
+        // Created on first use: probing the transformer is only needed for columns that
+        // can't be read by name, and one probe serves all of them.
+        Helpers.SortKeyResultPathTracer<T, TResult>? tracer = null;
+
+        for (int i = 0; i < sortColumns.Count; i++)
+        {
+            var column = sortColumns[i];
+            bool isIdentity = column.PropertyPath == SeekIdentitySortColumn.PropertyPath;
+
+            if (!isIdentity && Helpers.ResultKeyAccessor.CanRead(typeof(TResult), column.PropertyPath))
             {
-                readPropertyPath = Helpers.IdentityResultPropertyDetector.TryDetect(transformer)
-                    ?? throw new InvalidOperationException(
-                        "Cannot use Select() with a sort column added via an identity selector " +
-                        $"(x => x) — couldn't auto-detect which property on the projected " +
-                        $"{typeof(TResult).Name} shape holds the equivalent value. This is detected " +
-                        "automatically for a single Join() whose result selector assigns the inner " +
-                        "key value directly to a member; for anything more complex, pass the " +
-                        "property name explicitly: OrderByDescending(x => x, resultPropertyName: \"Id\").");
+                accessors[i] = Helpers.ResultKeyAccessor.GetAccessor<TResult>(column.PropertyPath);
+                continue;
             }
 
-            _resultAccessors[i] = Helpers.ResultKeyAccessor.GetAccessor<TResult>(readPropertyPath);
+            tracer ??= new Helpers.SortKeyResultPathTracer<T, TResult>(transformer);
+            var tracedPath = tracer.TryTrace(column.KeySelector);
+
+            if (tracedPath is null)
+            {
+                if (SeekComputedSortColumn.IsComputed(column.PropertyPath))
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot use Select() with the computed sort expression '{column.KeySelector.Body}' " +
+                        $"— the cursor is read back from the projected {typeof(TResult).Name}, and a " +
+                        "computed value can't be traced to one of its properties. Project the same " +
+                        "expression into a property of the result and name it when sorting, e.g. " +
+                        "OrderBy(x => x.Name.ToLower(), resultPropertyName: \"NameLower\").");
+                }
+
+                if (!isIdentity)
+                {
+                    // Not readable by name and not traceable: surface the long-standing
+                    // "no public property" error, which names the missing property.
+                    accessors[i] = Helpers.ResultKeyAccessor.GetAccessor<TResult>(column.PropertyPath);
+                    continue;
+                }
+
+                throw new InvalidOperationException(
+                    "Cannot use Select() with a sort column added via an identity selector " +
+                    $"(x => x) — couldn't trace which property on the projected " +
+                    $"{typeof(TResult).Name} shape holds the equivalent value. The value is followed " +
+                    "automatically through Join/LeftJoin/GroupJoin/SelectMany/Select chains as long as " +
+                    "it is copied unchanged; it is lost when it is computed (e.g. Id = o.Id + 1), " +
+                    "read from the optional side of an outer join, or built outside LINQ. In those " +
+                    "cases pass the property name explicitly: " +
+                    "OrderByDescending(x => x, resultPropertyName: \"Id\").");
+            }
+
+            accessors[i] = tracedPath.Length == 0
+                ? static item => item                       // the projected item itself is the sort value
+                : Helpers.ResultKeyAccessor.GetAccessor<TResult>(tracedPath);
         }
+
+        return accessors;
     }
 
     /// <summary>
@@ -75,13 +135,47 @@ public abstract class SeekProjectionBuilderBase<T, TResult>
     protected abstract Task<List<TResult>> MaterializeAsync(IQueryable<TResult> query, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Whether results carry <see cref="SeekResult{T}.TotalCount"/>. Derived builders set
+    /// this from the builder <c>Select()</c> was called on.
+    /// </summary>
+    protected bool IncludeTotalCount { get; set; }
+
+    /// <summary>
+    /// Counts the source query — every row before pagination and before the transformer —
+    /// using the provider's async API. The default runs the count synchronously, which is
+    /// all a plain in-memory queryable can do; provider builders override it.
+    /// </summary>
+    protected virtual Task<long> LongCountAsync(IQueryable<T> query, CancellationToken cancellationToken)
+        => Task.FromResult(query.LongCount());
+
+    /// <summary>
     /// Runs the full keyset pagination pipeline and returns the projected page result.
     /// </summary>
-    protected async ValueTask<SeekResult<TResult>> ExecuteAsync(CancellationToken cancellationToken)
-    {
-        _request ??= new SeekRequest { PageSize = _options.DefaultPageSize };
-        return await SeekPagingAlgorithm.ExecuteAsync(_request, _options, _serializer, FetchAsync, CreateCursor, cancellationToken);
-    }
+    protected ValueTask<SeekResult<TResult>> ExecuteAsync(CancellationToken cancellationToken)
+        => CreatePager().PageAsync(_request, cancellationToken);
+
+    /// <summary>
+    /// Returns the requested page and then every following one, fetching each lazily as
+    /// the sequence is enumerated.
+    /// </summary>
+    protected IAsyncEnumerable<SeekResult<TResult>> ExecutePagesAsync(CancellationToken cancellationToken)
+        => CreatePager().PagesAsync(_request, cancellationToken);
+
+    /// <summary>
+    /// Like <see cref="ExecutePagesAsync"/>, flattened to the individual items.
+    /// </summary>
+    protected IAsyncEnumerable<TResult> ExecuteItemsAsync(CancellationToken cancellationToken)
+        => CreatePager().ItemsAsync(_request, cancellationToken);
+
+    private SeekPager<T, TResult> CreatePager()
+        => new(
+            _sortColumns,
+            _serializer,
+            _valueConverter,
+            _options,
+            FetchAsync,
+            (item, index) => _resultAccessors[index](item),
+            IncludeTotalCount ? ct => LongCountAsync(_query, ct) : null);
 
     private Task<List<TResult>> FetchAsync(SeekData? seekData, SeekDirection direction, int limit, CancellationToken cancellationToken)
     {
@@ -97,19 +191,5 @@ public abstract class SeekProjectionBuilderBase<T, TResult>
 
         IQueryable<TResult> transformed = _transformer(query.Take(limit));
         return MaterializeAsync(transformed, cancellationToken);
-    }
-
-    private string CreateCursor(TResult item, SeekDirection direction)
-    {
-        var stringValues = new Dictionary<string, string>(_sortColumns.Count);
-
-        for (int i = 0; i < _sortColumns.Count; i++)
-        {
-            var value = _resultAccessors[i](item);
-            var stringValue = _valueConverter.ToString(value, _sortColumns[i].KeyType);
-            stringValues[_sortColumns[i].PropertyPath] = stringValue ?? string.Empty;
-        }
-
-        return _serializer.Serialize(new SeekData { Values = stringValues, Direction = direction });
     }
 }

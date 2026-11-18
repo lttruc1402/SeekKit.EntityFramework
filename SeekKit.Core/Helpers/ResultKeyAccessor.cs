@@ -16,6 +16,28 @@ internal static class ResultKeyAccessor
         return (Func<TResult, object?>)_cache.GetOrAdd(key, static k => Build<TResult>(k.Path));
     }
 
+    /// <summary>
+    /// Whether <paramref name="propertyPath"/> resolves on <paramref name="type"/> through
+    /// public instance properties — i.e. whether <see cref="GetAccessor{TResult}"/> would succeed.
+    /// </summary>
+    public static bool CanRead(Type type, string propertyPath)
+    {
+        if (propertyPath.Length == 0)
+            return false;
+
+        var current = type;
+        foreach (var segment in propertyPath.Split('.'))
+        {
+            var property = current.GetProperty(segment, BindingFlags.Public | BindingFlags.Instance);
+            if (property is not { CanRead: true })
+                return false;
+
+            current = property.PropertyType;
+        }
+
+        return true;
+    }
+
     private static Func<TResult, object?> Build<TResult>(string propertyPath)
     {
         var param = Expression.Parameter(typeof(TResult), "x");

@@ -21,7 +21,9 @@ internal sealed class SeekFindProjectionBuilder<T, TResult> : ISeekMongoBuilder<
     private readonly SeekOptionsBase _options;
     private readonly Func<TResult, object?>[] _resultAccessors;
 
-    private SeekRequest? _request;
+    private readonly bool _includeTotalCount;
+    private readonly FilterDefinition<T> _baseFilter;
+    private readonly SeekRequest? _request;
 
     public SeekFindProjectionBuilder(
         IFindFluent<T, T> find,
@@ -30,7 +32,8 @@ internal sealed class SeekFindProjectionBuilder<T, TResult> : ISeekMongoBuilder<
         ISeekSerializer serializer,
         ISeekValueConverter valueConverter,
         SeekRequest? request,
-        SeekOptionsBase options)
+        SeekOptionsBase options,
+        bool includeTotalCount)
     {
         if (sortColumns is null || sortColumns.Count == 0)
             throw new InvalidOperationException(
@@ -43,6 +46,8 @@ internal sealed class SeekFindProjectionBuilder<T, TResult> : ISeekMongoBuilder<
         _valueConverter = valueConverter ?? throw new ArgumentNullException(nameof(valueConverter));
         _options        = options ?? throw new ArgumentNullException(nameof(options));
         _request        = request;
+        _includeTotalCount = includeTotalCount;
+        _baseFilter     = find.Filter;
 
         _resultAccessors = new Func<TResult, object?>[_sortColumns.Count];
         for (int i = 0; i < _sortColumns.Count; i++)
@@ -61,37 +66,43 @@ internal sealed class SeekFindProjectionBuilder<T, TResult> : ISeekMongoBuilder<
     }
 
     public ValueTask<SeekResult<TResult>> ToSeekResultAsync(CancellationToken cancellationToken = default)
-    {
-        _request ??= new SeekRequest { PageSize = _options.DefaultPageSize };
-        return SeekPagingAlgorithm.ExecuteAsync(_request, _options, _serializer, FetchAsync, CreateCursor, cancellationToken);
-    }
+        => CreatePager().PageAsync(_request, cancellationToken);
+
+    public IAsyncEnumerable<SeekResult<TResult>> ToPagesAsync(CancellationToken cancellationToken = default)
+        => CreatePager().PagesAsync(_request, cancellationToken);
+
+    public IAsyncEnumerable<TResult> ToItemsAsync(CancellationToken cancellationToken = default)
+        => CreatePager().ItemsAsync(_request, cancellationToken);
+
+    private SeekPager<T, TResult> CreatePager()
+        => new(
+            _sortColumns,
+            _serializer,
+            _valueConverter,
+            _options,
+            FetchAsync,
+            (item, index) => _resultAccessors[index](item),
+            _includeTotalCount ? CountAsync : null);
+
+    private Task<long> CountAsync(CancellationToken cancellationToken)
+        => MongoCount.CountAsync(_find, _baseFilter, cancellationToken);
 
     private async Task<List<TResult>> FetchAsync(SeekData? seekData, SeekDirection direction, int limit, CancellationToken cancellationToken)
     {
+        // IFindFluent is mutable: always start again from the filter the caller supplied,
+        // so walking several pages with one builder doesn't stack keyset predicates.
+        _find.Filter = _baseFilter;
+
         if (seekData is not null)
         {
             var predicate = KeysetPredicateBuilder.BuildOrPredicate(_sortColumns, seekData, _valueConverter);
             if (predicate is not null)
-                _find.Filter = Builders<T>.Filter.And(_find.Filter, predicate);
+                _find.Filter = Builders<T>.Filter.And(_baseFilter, predicate);
         }
 
         var ordered = FindOrderingHelper.ApplyOrdering(_find, _sortColumns, direction);
         var transformed = _transformer(ordered.Limit(limit));
 
         return await transformed.ToListAsync(cancellationToken);
-    }
-
-    private string CreateCursor(TResult item, SeekDirection direction)
-    {
-        var stringValues = new Dictionary<string, string>(_sortColumns.Count);
-
-        for (int i = 0; i < _sortColumns.Count; i++)
-        {
-            var value = _resultAccessors[i](item);
-            var stringValue = _valueConverter.ToString(value, _sortColumns[i].KeyType);
-            stringValues[_sortColumns[i].PropertyPath] = stringValue ?? string.Empty;
-        }
-
-        return _serializer.Serialize(new SeekData { Values = stringValues, Direction = direction });
     }
 }

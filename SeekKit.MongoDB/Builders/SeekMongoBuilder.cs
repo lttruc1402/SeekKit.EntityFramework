@@ -49,11 +49,28 @@ internal sealed class SeekMongoBuilder<T> : SeekBuilderBase<T>, ISeekMongoQuerya
     public ISeekMongoBuilder<T, TResult> Select<TResult>(Func<IQueryable<T>, IQueryable<TResult>> transformer)
     {
         return new SeekMongoProjectionBuilder<T, TResult>(
-            Query, SortColumns, ResolveStrategy(), transformer, Serializer, ValueConverter, Request, _options);
+            Query, SortColumns.ToArray(), ResolveStrategy(), transformer, Serializer, ValueConverter, Request, _options, IncludeTotalCount);
     }
 
     public ValueTask<SeekResult<T>> ToSeekResultAsync(CancellationToken cancellationToken = default)
         => ExecuteAsync(cancellationToken);
+
+    public ISeekMongoQueryableBuilder<T> WithTotalCount(bool include = true)
+    {
+        SetIncludeTotalCount(include);
+        return this;
+    }
+
+    ISeekMongoBuilder<T> ISeekMongoBuilder<T>.WithTotalCount(bool include) => WithTotalCount(include);
+
+    public IAsyncEnumerable<SeekResult<T>> ToPagesAsync(CancellationToken cancellationToken = default)
+        => ExecutePagesAsync(cancellationToken);
+
+    public IAsyncEnumerable<T> ToItemsAsync(CancellationToken cancellationToken = default)
+        => ExecuteItemsAsync(cancellationToken);
+
+    protected override Task<long> LongCountAsync(IQueryable<T> query, CancellationToken cancellationToken)
+        => MongoCount.CountAsync(query, cancellationToken);
 
     protected override ISeekFilterStrategy ResolveDefaultStrategy()
         => new OrLogicSeekStrategy(ValueConverter);

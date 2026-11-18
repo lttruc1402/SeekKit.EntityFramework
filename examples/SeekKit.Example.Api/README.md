@@ -1,6 +1,6 @@
 # SeekKit.Example.Api
 
-A minimal .NET 10 web API showing [SeekKit.EntityFramework](../../README.md) cursor pagination
+A minimal .NET 11 web API showing [SeekKit.EntityFramework](../../README.md) cursor pagination
 against SQL Server, with an offset-pagination endpoint for a side-by-side
 performance comparison on a huge table.
 
@@ -98,9 +98,57 @@ curl "http://localhost:8080/products/projected?pageSize=20"
 
 The join to `Categories` only runs against the already ordered, keyset-filtered,
 and `Take`-limited page — SQL Server never joins the whole table. `ProductSummary`
-must expose the same sort-column names/types as `Product` (`Id`, `CreatedAt`) so
-SeekKit can read cursor values from the projected shape; see
+exposes the sort columns under the same names/types as `Product` (`Id`, `CreatedAt`),
+which is where SeekKit reads cursor values back from (a projection that renames them
+is traced automatically); see
 [`Data/ProductSummary.cs`](Data/ProductSummary.cs).
+
+### Client-driven sorting — `?sort=`
+
+`GET /products/sorted` lets the caller choose the sort, restricted to a whitelist.
+Each entry of `sort` is written `field:asc` or `field:desc`:
+
+```csharp
+var productSorts = new SeekSortMap<Product>()
+    .Add("createdAt", p => p.CreatedAt)
+    .Add("price",     p => p.Price)
+    .Add("name",      p => p.Name)
+    .Add("id",        p => p.Id)
+    .Default("-createdAt")
+    .TieBreaker("id");          // unique last column, appended automatically
+
+var result = await seek.SeekAsync(
+    db.Products.AsNoTracking(),
+    new SeekRequest { Token = token, PageSize = pageSize },
+    b => b.ApplySort(productSorts, sort)
+          .WithTotalCount(total == true && token is null),
+    ct);
+```
+
+```bash
+curl "http://localhost:8080/products/sorted"                              # default: -createdAt
+curl "http://localhost:8080/products/sorted?sort=price"                   # cheapest first
+curl "http://localhost:8080/products/sorted?sort=-price,name"             # priciest first, then by name
+curl "http://localhost:8080/products/sorted?sort=name%20desc&total=true"  # + totalCount on the first page
+```
+
+The response echoes the sort that was applied (`"sort": "-price,name,-id"`). Bad
+input is a `400` with a problem-details body, produced by the small
+`SeekErrors.AsBadRequest` endpoint filter at the bottom of `Program.cs`:
+
+```bash
+curl -i "http://localhost:8080/products/sorted?sort=isActive"
+# 400 — Cannot sort by 'isActive'. Sortable fields: createdAt, price, name, id.
+
+# a token from one sort, replayed with another
+curl -i "http://localhost:8080/products/sorted?sort=price:desc&token=<token from sort=price:asc>"
+# 400 — The pagination token was issued for a different sort order than this request uses.
+```
+
+> **Index every sortable field.** The seed script only creates the
+> `(CreatedAt DESC, Id)` index. Before sorting by `price` or `name` on the big
+> table, run [`scripts/sort-indexes.sql`](scripts/sort-indexes.sql) — without a
+> matching index SQL Server has to sort the whole table for each page.
 
 ### Offset pagination — for comparison
 

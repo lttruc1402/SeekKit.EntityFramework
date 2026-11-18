@@ -29,11 +29,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup .NET 10
+      - name: Setup .NET 10 + 11
         uses: actions/setup-dotnet@v4
         with:
-          # .NET 10 SDK can build all TFMs: netstandard2.1, net6, net8, net9, net10
-          dotnet-version: '10.0.x'
+          # The .NET 11 SDK builds every TFM (netstandard2.1, net8, net9, net10, net11).
+          # 10.0.x is installed alongside it only for its runtime: the test projects
+          # target net10.0 and net11.0 and each needs its own runtime to execute.
+          dotnet-version: |
+            10.0.x
+            11.0.x
 
       - name: Restore
         run: dotnet restore SeekKit.EntityFramework.slnx
@@ -52,12 +56,32 @@ jobs:
           dotnet test SeekKit.MongoDB.Tests/SeekKit.MongoDB.Tests.csproj
           --configuration Release --no-build --logger "console;verbosity=normal"
 
-      # Integration tests spin up a real MongoDB via Testcontainers, which needs
+      # Integration tests spin up real databases via Testcontainers, which needs
       # a Linux Docker daemon — available on the ubuntu runner only.
       - name: Integration tests (real MongoDB)
         if: matrix.os == 'ubuntu-latest'
         run: >
           dotnet test SeekKit.MongoDB.IntegrationTests/SeekKit.MongoDB.IntegrationTests.csproj
+          --configuration Release --no-build --logger "console;verbosity=normal"
+
+      # PostgreSQL is the provider that sorts NULL last and has row-value comparison —
+      # neither can be exercised on the SQLite database the unit tests use.
+      - name: Integration tests (real PostgreSQL)
+        if: matrix.os == 'ubuntu-latest'
+        run: >
+          dotnet test SeekKit.EntityFramework.PostgreSql.IntegrationTests/SeekKit.EntityFramework.PostgreSql.IntegrationTests.csproj
+          --configuration Release --no-build --logger "console;verbosity=normal"
+
+      - name: Integration tests (real MySQL)
+        if: matrix.os == 'ubuntu-latest'
+        run: >
+          dotnet test SeekKit.EntityFramework.MySql.IntegrationTests/SeekKit.EntityFramework.MySql.IntegrationTests.csproj
+          --configuration Release --no-build --logger "console;verbosity=normal"
+
+      - name: Integration tests (real SQL Server)
+        if: matrix.os == 'ubuntu-latest'
+        run: >
+          dotnet test SeekKit.EntityFramework.SqlServer.IntegrationTests/SeekKit.EntityFramework.SqlServer.IntegrationTests.csproj
           --configuration Release --no-build --logger "console;verbosity=normal"
 
       - name: Pack (validate packaging)
@@ -66,3 +90,25 @@ jobs:
           --no-build
           --configuration Release
           --output ./nupkg
+
+  # The Oracle image is several GB, so it gets a job of its own: the main build stays
+  # fast and this one can be re-run, or dropped, without touching it.
+  oracle:
+    name: Integration tests (real Oracle)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10 + 11
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+            11.0.x
+
+      - name: Test
+        run: >
+          dotnet test SeekKit.EntityFramework.Oracle.IntegrationTests/SeekKit.EntityFramework.Oracle.IntegrationTests.csproj
+          --configuration Release --logger "console;verbosity=normal"

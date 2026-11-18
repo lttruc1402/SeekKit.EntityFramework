@@ -21,8 +21,20 @@ internal sealed class SeekBuilder<T> : SeekBuilderBase<T>, ISeekBuilder<T>
         return this;
     }
 
+    public ISeekBuilder<T> WithTotalCount(bool include = true)
+    {
+        SetIncludeTotalCount(include);
+        return this;
+    }
+
     public ValueTask<SeekResult<T>> ToSeekResultAsync(CancellationToken cancellationToken = default)
         => ExecuteAsync(cancellationToken);
+
+    public IAsyncEnumerable<SeekResult<T>> ToPagesAsync(CancellationToken cancellationToken = default)
+        => ExecutePagesAsync(cancellationToken);
+
+    public IAsyncEnumerable<T> ToItemsAsync(CancellationToken cancellationToken = default)
+        => ExecuteItemsAsync(cancellationToken);
 
     public ISeekBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector, string? resultPropertyName = null)
     {
@@ -65,7 +77,7 @@ internal sealed class SeekBuilder<T> : SeekBuilderBase<T>, ISeekBuilder<T>
     public ISeekBuilder<T, TResult> Select<TResult>(Func<IQueryable<T>, IQueryable<TResult>> transformer)
     {
         return new SeekProjectionBuilder<T, TResult>(
-            Query, SortColumns, ResolveStrategy(), transformer, Serializer, ValueConverter, Request, _options);
+            Query, SortColumns.ToArray(), ResolveStrategy(), transformer, Serializer, ValueConverter, Request, _options, IncludeTotalCount);
     }
 
     protected override ISeekFilterStrategy ResolveDefaultStrategy()
@@ -73,4 +85,7 @@ internal sealed class SeekBuilder<T> : SeekBuilderBase<T>, ISeekBuilder<T>
 
     protected override Task<List<T>> MaterializeAsync(IQueryable<T> query, CancellationToken cancellationToken)
         => query.ToListAsync(cancellationToken);
+
+    protected override Task<long> LongCountAsync(IQueryable<T> query, CancellationToken cancellationToken)
+        => query.LongCountAsync(cancellationToken);
 }

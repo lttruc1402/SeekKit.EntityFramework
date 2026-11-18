@@ -1,6 +1,6 @@
 # SeekKit.Example.MongoApi
 
-A minimal .NET 10 web API showing [SeekKit.MongoDB](../../README.md#mongodb--iseekmongoservice) cursor pagination
+A minimal .NET 11 web API showing [SeekKit.MongoDB](../../README.md#mongodb--iseekmongoservice) cursor pagination
 against MongoDB, with a skip/limit endpoint for a side-by-side performance
 comparison on a large collection.
 
@@ -126,12 +126,56 @@ paged forward and backward, no gaps or duplicates. A few things to know:
 
 - **Use LINQ `.Union()`** — the driver translates it to a `$unionWith` stage
   and SeekKit's keyset `$or` filter works on top of it.
-- **Do not use `.Concat()`** (SQL `UNION ALL`). The MongoDB LINQ provider
-  currently throws on `Concat` combined with `OrderBy` + `Take`.
+- `.Concat()` (SQL `UNION ALL`, no de-duplication) works too with the
+  MongoDB.Driver version SeekKit.MongoDB depends on (3.14+). Older drivers threw
+  on `Concat` combined with `OrderBy` + `Take`.
 - The **tie-breaker column (`_id`) must be globally unique across both
   collections**, otherwise the cursor position is ambiguous.
 - The merged stream is sorted after the union, so create the compound index on
   **both** collections (the example does this at startup).
+
+### Client-driven sorting — `?sort=`
+
+`GET /products/sorted` lets the caller choose the sort, restricted to a whitelist.
+Each entry of `sort` is written `field:asc` or `field:desc`:
+
+```csharp
+var productSorts = new SeekSortMap<Product>()
+    .Add("createdAt", p => p.CreatedAt)
+    .Add("price",     p => p.Price)
+    .Add("name",      p => p.Name)
+    .Add("id",        p => p.Id)
+    .Default("-createdAt")
+    .TieBreaker("id");          // unique last field (_id), appended automatically
+
+var result = await seek
+    .CreateBuilder(products.AsQueryable().Where(p => p.IsActive))
+    .WithRequest(new SeekRequest { Token = token, PageSize = pageSize })
+    .ApplySort(productSorts, sort)
+    .WithTotalCount(total == true && token is null)
+    .ToSeekResultAsync(ct);
+```
+
+```bash
+curl "http://localhost:8081/products/sorted"                              # default: -createdAt
+curl "http://localhost:8081/products/sorted?sort=price"                   # cheapest first
+curl "http://localhost:8081/products/sorted?sort=-price,name"             # priciest first, then by name
+curl "http://localhost:8081/products/sorted?sort=name%20desc&total=true"  # + totalCount on the first page
+```
+
+The response echoes the sort that was applied (`"sort": "-price,name,-id"`). An
+unknown field, or a token replayed with a different sort, is a `400` with a
+problem-details body (see the `SeekErrors.AsBadRequest` endpoint filter at the
+bottom of `Program.cs`).
+
+> **Index every sortable field.** Only `{ CreatedAt: -1, _id: 1 }` is created at
+> startup. Before sorting by `price` or `name` on a large collection, add the
+> matching compound indexes:
+>
+> ```js
+> db.products.createIndex({ IsActive: 1, Price: 1, _id: 1 })
+> db.products.createIndex({ IsActive: 1, Name: 1, _id: 1 })
+> ```
 
 ### Paginate an aggregation pipeline (`$lookup`, custom stages)
 

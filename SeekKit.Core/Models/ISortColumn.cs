@@ -102,18 +102,41 @@ internal static class SeekIdentitySortColumn
     internal const string PropertyPath = "$self";
 }
 
+/// <summary>
+/// Naming for sort columns whose selector is a computed expression
+/// (<c>x =&gt; x.Name.ToLower()</c>, <c>x =&gt; x.Price * x.Quantity</c>) rather than a property.
+/// There is no property name to use as the cursor key, so the column is keyed by its
+/// position in the sort: <c>$expr0</c>, <c>$expr1</c>, … Like the identity sentinel, the
+/// <c>$</c> keeps it from ever colliding with a real property name.
+/// </summary>
+internal static class SeekComputedSortColumn
+{
+    private const string Prefix = "$expr";
+
+    internal static string PropertyPath(int position)
+        => Prefix + position.ToString(CultureInfo.InvariantCulture);
+
+    internal static bool IsComputed(string propertyPath)
+        => propertyPath.StartsWith(Prefix, StringComparison.Ordinal);
+}
+
 internal sealed class SortColumn<T, TKey> : ISortColumn<T>
 {
+    // Compiled accessors for plain member chains (x => x.CreatedAt, x => x.Customer.Name),
+    // keyed by the chain. A builder is created per request, and compiling the selector
+    // there cost ~60 µs per sort column per request; this way each distinct column is
+    // compiled once per process.
+    private static readonly ConcurrentDictionary<string, Func<T, object?>> MemberAccessors = new(StringComparer.Ordinal);
+
     private readonly Expression<Func<T, TKey>> _keySelector;
-    private readonly Func<T, TKey> _func;
     private readonly Type _valueType;
+    private Func<T, object?>? _accessor;
+
     public SortColumn(string name, Expression<Func<T, TKey>> keySelector, bool isDescending)
     {
         PropertyPath = name;
         _keySelector = keySelector;
         IsDescending = isDescending;
-
-        _func = _keySelector.Compile();
         _valueType = typeof(TKey);
     }
 
@@ -141,6 +164,42 @@ internal sealed class SortColumn<T, TKey> : ISortColumn<T>
 
     public object? GetValue(T entity)
     {
-        return _func(entity);
+        // Resolved on first use: a projected (Select) query never reads the sort value
+        // from T at all, and an empty page needs no cursor.
+        return (_accessor ??= ResolveAccessor())(entity);
     }
+
+    private Func<T, object?> ResolveAccessor()
+    {
+        var parameter = _keySelector.Parameters[0];
+        var body = _keySelector.Body;
+
+        // Identity: x => x
+        if (body == parameter)
+            return static entity => entity;
+
+        // A bare member chain rooted at the parameter is fully described by its member
+        // names, so its compiled accessor can be shared. Anything with a conversion or a
+        // computation in it is not, and is handled below.
+        string? chain = null;
+        var current = body;
+        while (current is MemberExpression member)
+        {
+            chain = chain is null ? member.Member.Name : $"{member.Member.Name}.{chain}";
+            current = member.Expression;
+        }
+
+        if (chain is not null && current == parameter)
+            return MemberAccessors.GetOrAdd(chain, static (_, selector) => Box(selector).Compile(), _keySelector);
+
+        // Computed expression: it differs per call site, so there is nothing to share.
+        // It runs at most twice per page (first and last row) — interpreting it is far
+        // cheaper than emitting and JIT-compiling a delegate for every request.
+        return Box(_keySelector).Compile(preferInterpretation: true);
+    }
+
+    private static Expression<Func<T, object?>> Box(Expression<Func<T, TKey>> selector)
+        => Expression.Lambda<Func<T, object?>>(
+            Expression.Convert(selector.Body, typeof(object)),
+            selector.Parameters);
 }

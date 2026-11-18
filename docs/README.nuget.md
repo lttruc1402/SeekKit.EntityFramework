@@ -61,9 +61,10 @@ SeekResult<OrderDto> page = await seek
     .ToSeekResultAsync();
 ```
 
-`TResult` must expose public properties with the same names/types as the sort
-columns (`Id`, `CreatedAt` here) so SeekKit can read cursor values from the
-projected shape.
+Cursor values are read back from `TResult`: from the same-named properties
+(`Id`, `CreatedAt` here) when they exist, otherwise SeekKit traces the value
+through the projection — renamed members and keys carried through `Join` /
+`LeftJoin` chains are found automatically, no extra configuration.
 
 ## Features
 
@@ -72,10 +73,14 @@ projected shape.
 - Database-tuned strategies: tuple comparison, `UNION ALL`, OR-predicates
 - Multi-column sorting with mixed directions
 - Push-down projection via `Select<TResult>` — joins run only on the limited page
+- Client-driven sorting (`?sort=price:desc,name:asc`) against a whitelist — `SeekSortMap<T>` + `ApplySort`
+- Nullable, string, and computed sort columns
+- Opt-in total count (`WithTotalCount()`) and `IAsyncEnumerable` streaming (`ToPagesAsync` / `ToItemsAsync`)
+- Tokens bound to their sort, with optional expiry and strict validation (`SeekTokenException`)
 - Optional HMAC-SHA256 token signing (`config.UseHmacSigning(key)`)
 - DTO projection via `result.Map(...)` preserving all metadata (in-memory, post-fetch)
 - Extensible: custom type converters, serializers, filter strategies
-- Targets .NET 8 / 9 / 10 (EF Core 8/9/10) and .NET Standard 2.1 (EF Core 5)
+- Targets .NET 8 / 9 / 10 / 11 (EF Core 8/9/10/11) and .NET Standard 2.1 (EF Core 5)
 
 ## Links
 

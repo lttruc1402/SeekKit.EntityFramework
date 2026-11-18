@@ -30,6 +30,14 @@ public sealed class SeekResult<T>
     /// <summary>Number of items actually returned on this page.</summary>
     public int Count { get; set; }
 
+    /// <summary>
+    /// Total number of rows across all pages, or <see langword="null"/> when it wasn't
+    /// requested. Only populated by a builder's <c>WithTotalCount()</c> — it costs an
+    /// extra <c>COUNT</c> query, so it is opt-in. Omitted from JSON when null.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? TotalCount { get; set; }
+
     /// <summary>Metadata about the page size and request time.</summary>
     public required PageMetadata PageMetadata { get; set; }
 
@@ -80,6 +88,7 @@ public sealed class SeekResult<T>
             HasNext = HasNext,
             HasPrevious = HasPrevious,
             Count = items.Count,
+            TotalCount = TotalCount,
             PageMetadata = PageMetadata,
             ExtensionData = ExtensionData
         };

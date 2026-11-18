@@ -27,6 +27,16 @@ public sealed class SeekKitOptions : SeekOptionsBase
     /// Default: <see cref="DatabaseStrategy.ForSqlServer"/> with <see cref="SqlServerStrategy.UnionAll"/>.
     /// </summary>
     public DatabaseStrategy Strategy { get; set; } = DatabaseStrategy.ForSqlServer();
+
+    /// <summary>
+    /// Follows the database chosen via <see cref="Strategy"/>: PostgreSQL and Oracle sort
+    /// <c>NULL</c> after every other value in ascending order, SQL Server, MySQL and SQLite
+    /// sort it first.
+    /// </summary>
+    protected override SeekNullOrdering DefaultNullOrdering
+        => Strategy.DatabaseType is DatabaseType.PostgreSql or DatabaseType.Oracle
+            ? SeekNullOrdering.NullsLargest
+            : SeekNullOrdering.NullsSmallest;
 }
 
 

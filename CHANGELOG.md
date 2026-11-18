@@ -5,6 +5,164 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - Unreleased
+
+All three packages release together at 2.4.0.
+
+### Added
+
+- **All packages:** new `net11.0` target (EF Core 11 for SeekKit.EntityFramework).
+  The existing `netstandard2.1`, `net8.0`, `net9.0`, and `net10.0` targets are
+  unchanged.
+- **SeekKit.Core:** `Select()` (EF) / the queryable `Select()` origin (Mongo) now
+  **traces each sort column's value through the transformer** to find the
+  `TResult` property that holds it, whenever `TResult` has no same-named
+  property. This replaces the 2.3.0 auto-detection, which only recognized a
+  single `Join` or a single `Select`. Tracing follows `Select`, `Join`,
+  `LeftJoin`, `RightJoin`, `GroupJoin` + `SelectMany`, and any element-preserving
+  operator (`Where`, `OrderBy`, `Take`, …) through any number of intermediate
+  anonymous types, object initializers, and positional records, and uses join
+  key equality (`id => id` ⇄ `o => o.Id`, including composite keys). In practice:
+  - an identity sort (`OrderBy(x => x)` on pre-filtered ids) followed by a chain
+    of joins no longer needs `resultPropertyName`;
+  - ordinary member sorts work when the projection renames the column
+    (`OrderBy(o => o.CreatedAt)` + `new Dto { Created = o.CreatedAt }`).
+
+  Like before, the transformer is invoked once against an empty in-memory
+  queryable and only its expression tree is inspected — no query runs. Tracing
+  never guesses: a computed value, a value read from the optional side of an
+  outer join, or a projection built outside LINQ is reported as untraceable and
+  `Select()` throws the same actionable `InvalidOperationException` as before.
+- **Client-driven sorting:** `SeekSortMap<T>` (SeekKit.Core) is a whitelist that
+  turns a sort string such as `price:desc,name:asc` into sort columns, with a default
+  sort, an automatic unique tie-breaker, and a field limit. Apply it with
+  `builder.ApplySort(sortMap, sort)` on any EF or MongoDB builder. Unknown
+  fields and bad syntax throw the new `SeekSortException` (an
+  `ArgumentException`) — map it to `400`.
+- **Nullable sort columns** are supported on every strategy and every MongoDB
+  origin. The keyset filter is made null-aware (`col > @p OR col IS NULL`,
+  `col IS NOT NULL`, …) while the `ORDER BY` is left untouched. Where the
+  database puts `NULL` comes from the new `NullOrdering` option, which defaults
+  per provider: `NullsLargest` for PostgreSQL and Oracle, `NullsSmallest` for
+  SQL Server, MySQL, SQLite, and MongoDB.
+- **Computed sort keys:** `OrderBy` / `OrderByDescending` accept any expression
+  the provider can translate (`x => x.Name.ToLower()`, `x => x.Price * x.Qty`)
+  instead of throwing "must be a property access". Supported by EF Core and the
+  MongoDB queryable origin; the MongoDB aggregate/find builders throw a
+  descriptive `NotSupportedException`. With `Select()`, pass
+  `resultPropertyName` for such a column.
+- **Total count:** `WithTotalCount()` on every builder fills the new
+  `SeekResult<T>.TotalCount` (`long?`, omitted from JSON when null) with one
+  extra count query over the unpaged source.
+- **Streaming:** `ToPagesAsync()` and `ToItemsAsync()` on every builder
+  (including the projected ones) return an `IAsyncEnumerable` that walks from
+  the requested page to the last, one lazy keyset query per page.
+- **Token validation:** every token now carries a fingerprint of the sort it
+  was issued for. New options `InvalidTokenBehavior` (`FirstPage` | `Throw`)
+  and `TokenLifetime` (token expiry), and a new `SeekTokenException` with an
+  `Error` of `SortMismatch`, `InvalidValue`, `Malformed`, or `Expired`.
+- **Tests:** four new integration test projects run every sort flavour, forward
+  and backward, against the real database in a container (Testcontainers), under
+  every strategy: `SeekKit.EntityFramework.PostgreSql.IntegrationTests`
+  (PostgreSQL 17 — sorts `NULL` last, has row-value comparison),
+  `…SqlServer.IntegrationTests` (SQL Server 2022), `…MySql.IntegrationTests`
+  (MySQL 8.4, `MySql.EntityFrameworkCore`), and `…Oracle.IntegrationTests`
+  (Oracle Database 23 Free). The last three share one provider-independent
+  suite. SQL Server runs on EF Core 10 and 11; the others target `net10.0` only
+  until their providers ship a stable release for EF Core 11.
+- **Examples:** both example APIs gained `GET /products/sorted?sort=…`, showing
+  `SeekSortMap`, `WithTotalCount`, and mapping the two exceptions to `400`.
+
+### Performance
+
+Measured, not estimated — see "Measured: why the strategy matters" in the README.
+
+- **Sort-column accessors are compiled once per process** instead of on every
+  `OrderBy` call. Building a builder with two sort columns dropped from ~131 µs
+  and 9.9 KB to ~3.5 µs and 1.5 KB per request (four columns: 244 µs → 5.2 µs).
+  Computed sort keys are interpreted rather than JIT-compiled.
+- **PostgreSQL: `ForPostgreSql` now defaults to `FallbackStrategy.UnionAll`**
+  (was `OrLogic`). The fallback is what runs whenever the row-value comparison
+  can't — mixed sort directions, and now nullable columns. On a 2M-row table a
+  page from the middle took 85 ms–1.4 s through the OR predicate and takes
+  1.2–2.0 ms through `UNION ALL`. Pass `fallback: FallbackStrategy.OrLogic` to
+  get the old behaviour back.
+- **`UNION ALL`: a nullable column's `IS NULL` alternative is its own branch**
+  rather than an `OR` inside one, so every branch stays a plain index range.
+- **`UNION ALL`: each branch is ordered only by the columns it doesn't pin.** A
+  branch filtering on `a = @a AND b > @b` is now ordered by `b, c` instead of
+  `a, b, c` (the outer query still orders by all of them). MySQL does not see
+  through `WHERE a IS NULL ORDER BY a, b` and sorted every matching row — 780 ms
+  for a page that now takes 5 ms.
+
+### Fixed
+
+- **String sort columns** only worked on the first page: building the keyset
+  filter for the next one threw `InvalidOperationException: The binary operator
+  GreaterThan is not defined for the types 'System.String' and 'System.String'`
+  on the OR-predicate and `UNION ALL` strategies. Strings are now compared with
+  `string.Compare`, which EF Core and the MongoDB driver translate to a plain
+  column comparison.
+- **Nullable sort columns** silently lost every row holding `NULL` from the
+  second page on, and a `NULL` boundary value was written into the token as an
+  empty string (indistinguishable from `""` for strings). See **Added** above;
+  `NULL` is now stored in the token as JSON `null`.
+- A malformed token correctly fell back to the first page but reported
+  `HasPrevious = true` and returned a `PreviousToken`. The fallback page is now
+  a real first page.
+- **SeekKit.MongoDB:** the find builders AND-ed each page's keyset predicate
+  into the caller's mutable `IFindFluent`, so reusing one builder for several
+  pages stacked predicates. Each fetch now starts from the original filter.
+
+### Changed
+
+- A token used with a different sort than it was issued for now throws
+  `SeekTokenException` (`SortMismatch`). Previously this either threw a plain
+  `InvalidOperationException` ("Cursor value for 'X' not found") or — when the
+  column names happened to match — silently paged from the wrong position.
+  `SeekTokenException` derives from `InvalidOperationException`, and tokens
+  issued by earlier versions (no fingerprint) are still accepted.
+- A token value that can't be converted to its column type now throws
+  `SeekTokenException` (`InvalidValue`) instead of the converter's raw
+  `FormatException`.
+- **PostgreSQL:** a sort that includes a nullable column no longer uses the
+  row-value comparison `(a, b) > (@a, @b)` — it can't be made null-aware — and
+  goes through the fallback (`UNION ALL` by default, see **Performance**) instead. A
+  reference-typed column counts as nullable unless annotated non-null
+  (`string Name` under `<Nullable>enable</Nullable>`); in projects without
+  nullable annotations every `string` sort column takes the fallback path.
+- Tokens are ~25 characters longer (the `Sort` fingerprint), plus the expiry
+  when `TokenLifetime` is set. `SeekData` gained `Sort`, `ExpiresAt`, and the
+  non-serialized `NullOrdering`; a custom `ISeekSerializer` should round-trip
+  the first two (required for `TokenLifetime` to work).
+- **Source-breaking for custom implementations only:** `ISeekBuilder<T>`,
+  `ISeekBuilder<T, TResult>`, and the `ISeekMongoBuilder` interfaces gained
+  `WithTotalCount`, `ToPagesAsync`, and `ToItemsAsync`. Code that merely *uses*
+  the builders is unaffected.
+
+- `resultPropertyName` is now only needed for those untraceable cases (and for
+  Mongo's aggregate/find origins, which build pipelines outside LINQ). Existing
+  calls that pass it keep working unchanged, and a same-named `TResult` property
+  is still preferred over tracing, so no existing cursor changes shape.
+- **Dependencies** raised to the latest patch of each major line — these are the
+  new *minimum* versions the packages require:
+
+  | Target | EF Core | Microsoft.Extensions.* |
+  |---|---|---|
+  | `net8.0` | 8.0.16 → 8.0.34 | 8.0.2 (unchanged) |
+  | `net9.0` | 9.0.6 → 9.0.23 | 9.0.6 → 9.0.23 |
+  | `net10.0` | 10.0.6 → 10.0.15 | 10.0.6 → 10.0.15 |
+  | `net11.0` | 11.0.0 (new) | 11.0.0 (new) |
+  | `netstandard2.1` | 5.0.17 (unchanged) | 5.0.0 (unchanged) |
+
+  `netstandard2.1` also moves `System.Text.Json` 6.0.7 → 6.0.11 (the patched
+  release — the `NU1903` suppression is gone) and `System.Collections.Immutable`
+  6.0.0 → 6.0.1. **SeekKit.MongoDB** now requires `MongoDB.Driver` 3.14.0
+  (was 3.10.0).
+- **SeekKit.MongoDB:** with `MongoDB.Driver` 3.14, paginating a LINQ `.Concat()`
+  of two collections works (older drivers threw on `Concat` + `OrderBy` +
+  `Take`); `.Union()` keeps working as before.
+
 ## [2.3.0] - 2026-08-14
 
 All three packages release together at 2.3.0.

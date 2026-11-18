@@ -15,6 +15,7 @@ internal sealed class SeekFindBuilder<T> : SeekBuilderCore<T>, ISeekMongoFindBui
 {
     private readonly IFindFluent<T, T> _find;
     private readonly SeekKitMongoOptions _options;
+    private readonly FilterDefinition<T> _baseFilter;
 
     public SeekFindBuilder(
         IFindFluent<T, T> find,
@@ -25,6 +26,7 @@ internal sealed class SeekFindBuilder<T> : SeekBuilderCore<T>, ISeekMongoFindBui
     {
         _find    = find ?? throw new ArgumentNullException(nameof(find));
         _options = options;
+        _baseFilter = _find.Filter;
     }
 
     public ISeekMongoFindBuilder<T> WithRequest(SeekRequest request)
@@ -54,11 +56,28 @@ internal sealed class SeekFindBuilder<T> : SeekBuilderCore<T>, ISeekMongoFindBui
     public ISeekMongoBuilder<T, TResult> Select<TResult>(Func<IFindFluent<T, T>, IFindFluent<T, TResult>> transformer)
     {
         return new SeekFindProjectionBuilder<T, TResult>(
-            _find, SortColumns, transformer, Serializer, ValueConverter, Request, _options);
+            _find, SortColumns.ToArray(), transformer, Serializer, ValueConverter, Request, _options, IncludeTotalCount);
     }
 
     public ValueTask<SeekResult<T>> ToSeekResultAsync(CancellationToken cancellationToken = default)
         => ExecuteAsync(cancellationToken);
+
+    public ISeekMongoFindBuilder<T> WithTotalCount(bool include = true)
+    {
+        SetIncludeTotalCount(include);
+        return this;
+    }
+
+    ISeekMongoBuilder<T> ISeekMongoBuilder<T>.WithTotalCount(bool include) => WithTotalCount(include);
+
+    public IAsyncEnumerable<SeekResult<T>> ToPagesAsync(CancellationToken cancellationToken = default)
+        => ExecutePagesAsync(cancellationToken);
+
+    public IAsyncEnumerable<T> ToItemsAsync(CancellationToken cancellationToken = default)
+        => ExecuteItemsAsync(cancellationToken);
+
+    protected override Task<long> CountAsync(CancellationToken cancellationToken)
+        => MongoCount.CountAsync(_find, _baseFilter, cancellationToken);
 
     protected override async Task<List<T>> FetchAsync(
         SeekData? seekData,
@@ -67,11 +86,15 @@ internal sealed class SeekFindBuilder<T> : SeekBuilderCore<T>, ISeekMongoFindBui
         CancellationToken cancellationToken)
     {
         // Keyset boundary → AND it into the existing find filter.
+        // IFindFluent is mutable: always start again from the filter the caller supplied,
+        // so walking several pages with one builder doesn't stack keyset predicates.
+        _find.Filter = _baseFilter;
+
         if (seekData is not null)
         {
             var predicate = KeysetPredicateBuilder.BuildOrPredicate(SortColumns, seekData, ValueConverter);
             if (predicate is not null)
-                _find.Filter = Builders<T>.Filter.And(_find.Filter, predicate);
+                _find.Filter = Builders<T>.Filter.And(_baseFilter, predicate);
         }
 
         var ordered = FindOrderingHelper.ApplyOrdering(_find, SortColumns, direction);

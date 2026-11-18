@@ -21,7 +21,8 @@ internal sealed class SeekAggregateProjectionBuilder<T, TResult> : ISeekMongoBui
     private readonly SeekOptionsBase _options;
     private readonly Func<TResult, object?>[] _resultAccessors;
 
-    private SeekRequest? _request;
+    private readonly bool _includeTotalCount;
+    private readonly SeekRequest? _request;
 
     public SeekAggregateProjectionBuilder(
         IAggregateFluent<T> aggregate,
@@ -30,7 +31,8 @@ internal sealed class SeekAggregateProjectionBuilder<T, TResult> : ISeekMongoBui
         ISeekSerializer serializer,
         ISeekValueConverter valueConverter,
         SeekRequest? request,
-        SeekOptionsBase options)
+        SeekOptionsBase options,
+        bool includeTotalCount)
     {
         if (sortColumns is null || sortColumns.Count == 0)
             throw new InvalidOperationException(
@@ -43,6 +45,7 @@ internal sealed class SeekAggregateProjectionBuilder<T, TResult> : ISeekMongoBui
         _valueConverter = valueConverter ?? throw new ArgumentNullException(nameof(valueConverter));
         _options        = options ?? throw new ArgumentNullException(nameof(options));
         _request        = request;
+        _includeTotalCount = includeTotalCount;
 
         _resultAccessors = new Func<TResult, object?>[_sortColumns.Count];
         for (int i = 0; i < _sortColumns.Count; i++)
@@ -61,10 +64,26 @@ internal sealed class SeekAggregateProjectionBuilder<T, TResult> : ISeekMongoBui
     }
 
     public ValueTask<SeekResult<TResult>> ToSeekResultAsync(CancellationToken cancellationToken = default)
-    {
-        _request ??= new SeekRequest { PageSize = _options.DefaultPageSize };
-        return SeekPagingAlgorithm.ExecuteAsync(_request, _options, _serializer, FetchAsync, CreateCursor, cancellationToken);
-    }
+        => CreatePager().PageAsync(_request, cancellationToken);
+
+    public IAsyncEnumerable<SeekResult<TResult>> ToPagesAsync(CancellationToken cancellationToken = default)
+        => CreatePager().PagesAsync(_request, cancellationToken);
+
+    public IAsyncEnumerable<TResult> ToItemsAsync(CancellationToken cancellationToken = default)
+        => CreatePager().ItemsAsync(_request, cancellationToken);
+
+    private SeekPager<T, TResult> CreatePager()
+        => new(
+            _sortColumns,
+            _serializer,
+            _valueConverter,
+            _options,
+            FetchAsync,
+            (item, index) => _resultAccessors[index](item),
+            _includeTotalCount ? CountAsync : null);
+
+    private Task<long> CountAsync(CancellationToken cancellationToken)
+        => MongoCount.CountAsync(_aggregate, cancellationToken);
 
     private async Task<List<TResult>> FetchAsync(SeekData? seekData, SeekDirection direction, int limit, CancellationToken cancellationToken)
     {
@@ -81,19 +100,5 @@ internal sealed class SeekAggregateProjectionBuilder<T, TResult> : ISeekMongoBui
 
         var transformed = _transformer(pipeline.Limit(limit));
         return await transformed.ToListAsync(cancellationToken);
-    }
-
-    private string CreateCursor(TResult item, SeekDirection direction)
-    {
-        var stringValues = new Dictionary<string, string>(_sortColumns.Count);
-
-        for (int i = 0; i < _sortColumns.Count; i++)
-        {
-            var value = _resultAccessors[i](item);
-            var stringValue = _valueConverter.ToString(value, _sortColumns[i].KeyType);
-            stringValues[_sortColumns[i].PropertyPath] = stringValue ?? string.Empty;
-        }
-
-        return _serializer.Serialize(new SeekData { Values = stringValues, Direction = direction });
     }
 }

@@ -11,8 +11,8 @@ namespace SeekKit.EntityFramework.Core;
 /// services.AddSeekKit(options =>
 /// {
 ///     options.Strategy = DatabaseStrategy.ForPostgreSql(
-///         strategy: PostgreSqlStrategy.Tuple,
-///         fallback:  FallbackStrategy.OrLogic);
+///         strategy: PostgreSqlStrategy.Auto,
+///         fallback:  FallbackStrategy.UnionAll);
 /// });
 /// </code>
 /// </example>
@@ -49,10 +49,17 @@ public abstract class DatabaseStrategy
 
     /// <summary>Creates a PostgreSQL strategy configuration.</summary>
     /// <param name="strategy">Query strategy. Default: <see cref="PostgreSqlStrategy.Auto"/>.</param>
-    /// <param name="fallback">Fallback when primary cannot be applied. Default: <see cref="FallbackStrategy.OrLogic"/>.</param>
+    /// <param name="fallback">
+    /// What to use when the row-value comparison cannot be applied — mixed sort directions,
+    /// a nullable sort column, or more than 8 columns. Default:
+    /// <see cref="FallbackStrategy.UnionAll"/>, which PostgreSQL answers with one ordered
+    /// index scan per branch. <see cref="FallbackStrategy.OrLogic"/> is not recommended on
+    /// PostgreSQL: its planner cannot use the index order through an OR and ends up reading
+    /// and sorting every row beyond the cursor.
+    /// </param>
     public static DatabaseStrategy ForPostgreSql(
         PostgreSqlStrategy strategy = PostgreSqlStrategy.Auto,
-        FallbackStrategy   fallback = FallbackStrategy.OrLogic)
+        FallbackStrategy   fallback = FallbackStrategy.UnionAll)
         => new SeekPostgreSqlStrategy(strategy, fallback);
 
     /// <summary>Creates a SQL Server strategy configuration.</summary>

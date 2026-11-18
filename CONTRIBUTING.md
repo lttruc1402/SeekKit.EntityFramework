@@ -4,8 +4,10 @@ Thanks for your interest in contributing! Issues and pull requests are welcome.
 
 ## Getting started
 
-Prerequisites: [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-(the library multi-targets netstandard2.1 / net8.0 / net9.0 / net10.0, all built by the .NET 10 SDK).
+Prerequisites: [.NET 11 SDK](https://dotnet.microsoft.com/download/dotnet/11.0)
+(the library multi-targets netstandard2.1 / net8.0 / net9.0 / net10.0 / net11.0, all built by the
+.NET 11 SDK). The test projects run on both net10.0 and net11.0, so `dotnet test` also needs the
+.NET 10 runtime installed.
 
 ```bash
 git clone https://github.com/lttruc1402/SeekKit.EntityFramework.git

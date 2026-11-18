@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using SeekKit.Core;
 using SeekKit.Core.Models;
 using SeekKit.Example.MongoApi.Data;
 using SeekKit.MongoDB;
@@ -138,13 +139,57 @@ app.MapGet("/products/skip", async (
     });
 });
 
+// ── Client-driven sorting — ?sort=price:desc,name:asc ───────────────────────
+// The client picks the sort, but only from this whitelist: an unknown field is a
+// 400, never a $sort on an arbitrary (unindexed, private) field.
+// Each entry is field:asc or field:desc (the direction defaults to asc):
+//   GET /products/sorted                                → default sort (createdAt:desc)
+//   GET /products/sorted?sort=price:asc                 → cheapest first
+//   GET /products/sorted?sort=price:desc,name:asc       → priciest first, then by name
+//   GET /products/sorted?sort=name:desc&total=true      → also returns totalCount
+// "id" (_id) is appended automatically as the unique tie-breaker. Each sortable
+// field needs its own compound index, e.g. { price: 1, _id: 1 } — see the README.
+var productSorts = new SeekSortMap<Product>()
+    .Add("createdAt", p => p.CreatedAt)
+    .Add("price",     p => p.Price)
+    .Add("name",      p => p.Name)
+    .Add("id",        p => p.Id)
+    .Default("createdAt:desc")
+    .TieBreaker("id");
+
+app.MapGet("/products/sorted", async (
+    ISeekMongoService seek,
+    IMongoCollection<Product> products,
+    string? sort,
+    string? token,
+    int? pageSize,
+    bool? total,
+    CancellationToken ct) =>
+{
+    var sw = Stopwatch.StartNew();
+
+    SeekResult<Product> result = await seek
+        .CreateBuilder(products.AsQueryable().Where(p => p.IsActive))
+        .WithRequest(new SeekRequest { Token = token, PageSize = pageSize })
+        .ApplySort(productSorts, sort)
+        // Counting every matching document is the expensive part — only when asked
+        // for, and only on the first page.
+        .WithTotalCount(total == true && token is null)
+        .ToSeekResultAsync(ct);
+
+    return Results.Ok(result
+        .WithValue("sort", string.Join(",", productSorts.Resolve(sort)))   // the sort actually applied
+        .WithValue("elapsedMs", sw.Elapsed.TotalMilliseconds));
+})
+.AddEndpointFilter(SeekErrors.AsBadRequest);
+
 // ── Cursor pagination over a UNION of two collections (LINQ) ─────────────────
 // Pages the "products" collection together with an "products_archive" collection
 // as a single stream, ordered globally. Use LINQ .Union() — the MongoDB driver
 // translates it to a $unionWith stage, and SeekKit's keyset $or filter works on
 // top of it. Notes:
-//   • Use .Union() (dedup, → $unionWith), NOT .Concat() — the LINQ provider
-//     currently throws on Concat + OrderBy + Take.
+//   • .Union() de-duplicates (→ $unionWith). .Concat() (no dedup) also works on
+//     MongoDB.Driver 3.14+; older drivers threw on Concat + OrderBy + Take.
 //   • For pipelines the LINQ provider can't express ($lookup, custom stages),
 //     use the aggregation-fluent overload — see /products/union-aggregate below.
 //   • The unique tie-breaker (_id) must be globally unique across BOTH
@@ -234,3 +279,27 @@ app.MapGet("/products/find", async (
 app.MapGet("/", () => Results.Redirect("/products"));
 
 app.Run();
+
+/// <summary>
+/// Turns the two exceptions that mean "the request is wrong" into 400 responses: a sort
+/// string naming an unknown field, and a pagination token that can't be used (issued for
+/// another sort, expired, malformed).
+/// </summary>
+internal static class SeekErrors
+{
+    public static async ValueTask<object?> AsBadRequest(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        try
+        {
+            return await next(context);
+        }
+        catch (SeekSortException ex)
+        {
+            return Results.Problem(title: "Invalid sort", detail: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+        }
+        catch (SeekTokenException ex)
+        {
+            return Results.Problem(title: "Invalid pagination token", detail: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+        }
+    }
+}
